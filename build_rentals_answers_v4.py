@@ -1,0 +1,511 @@
+# -*- coding: utf-8 -*-
+# build_rentals_answers_v4.py
+# Генерит DOCX: cha_test_12tenses_rentals_with_answers_v4.docx
+# Формат — наш «Cha» (EN — gold/bold; RU — dark red italic; TH — dark green italic; ответы — purple)
+
+from docx import Document
+from docx.shared import Pt, RGBColor, Cm
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+
+# ---------- Цвета и стили ----------
+GOLD       = RGBColor(184,134,11)     # EN (жёлтый/золото)
+BLACK      = RGBColor(0,0,0)
+DARK_RED   = RGBColor(139,0,0)        # RU
+DARK_GREEN = RGBColor(0,100,0)        # TH
+PURPLE     = RGBColor(102,0,153)      # Ответы/объяснения (EN only)
+
+THAI_FONT_NAME = "Noto Sans Thai"     # если установишь локально — шрифт подхватится
+
+def new_doc():
+    doc = Document()
+    for s in doc.sections:
+        s.page_height = Cm(29.7)
+        s.page_width  = Cm(21.0)
+        s.left_margin   = Cm(2.0)
+        s.right_margin  = Cm(2.0)
+        s.top_margin    = Cm(2.0)
+        s.bottom_margin = Cm(2.0)
+        # Footer: © Cha 2025 + номер страницы
+        fp = s.footer.paragraphs[0]
+        fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run1 = fp.add_run("© Cha 2025 · Page ")
+        run1.font.size = Pt(9)
+        run1.font.color.rgb = BLACK
+        fld = OxmlElement("w:fldSimple")
+        fld.set(qn("w:instr"), "PAGE")
+        run2 = fp.add_run()
+        run2._r.append(fld)
+    return doc
+
+def add_title(doc, text):
+    p = doc.add_paragraph()
+    r = p.add_run(text)
+    r.font.bold = True
+    r.font.size = Pt(18)
+    r.font.color.rgb = BLACK
+
+def add_section_title(doc, emoji, text):
+    p = doc.add_paragraph()
+    r = p.add_run(f"{emoji} {text}")
+    r.font.bold = True
+    r.font.size = Pt(16)
+    r.font.color.rgb = BLACK
+
+def add_blank(doc, lines=1):
+    for _ in range(lines):
+        doc.add_paragraph("")
+
+def run_gold(p, txt, size=12, bold=True):
+    r = p.add_run(txt)
+    r.font.color.rgb = GOLD
+    r.font.bold = bold
+    r.font.size = Pt(size)
+    return r
+
+def run_black(p, txt, size=12, bold=True, underline=False):
+    r = p.add_run(txt)
+    r.font.color.rgb = BLACK
+    r.font.bold = bold
+    r.font.underline = underline
+    r.font.size = Pt(size)
+    return r
+
+def line_ru(doc, txt, size=11):
+    p = doc.add_paragraph()
+    r = p.add_run(f"({txt})")
+    r.font.italic = True
+    r.font.color.rgb = DARK_RED
+    r.font.size = Pt(size)
+
+def line_th(doc, txt, size=11):
+    p = doc.add_paragraph()
+    r = p.add_run(f"({txt})")
+    r.font.italic = True
+    r.font.color.rgb = DARK_GREEN
+    r.font.size = Pt(size)
+    r.font.name = THAI_FONT_NAME
+
+def prompt_line(p, text):
+    """
+    Строка-подсказка: основной текст (EN) — gold,
+    куски в [[...]] — подчёркнутые чёрные (что нужно выбрать/вставить).
+    """
+    i = 0
+    while i < len(text):
+        s = text.find("[[", i)
+        if s == -1:
+            run_gold(p, text[i:])
+            break
+        if s > i:
+            run_gold(p, text[i:s])
+        e = text.find("]]", s+2)
+        if e == -1:
+            e = len(text)
+        chunk = text[s+2:e]
+        run_black(p, chunk, underline=True, bold=True)
+        i = e+2
+
+def examples_block(doc, items, idx_prefix):
+    p = doc.add_paragraph()
+    run_black(p, "✍️ Examples:", bold=True)
+    for j, ex in enumerate(items, 1):
+        p2 = doc.add_paragraph()
+        run_black(p2, f"{idx_prefix}.{j} ", bold=True)
+        # сами примеры — подчёркнутые чёрные, чтобы визуально отделялись
+        r = run_black(p2, ex, bold=False, underline=True)
+
+def add_word_bank_item(doc, letter, en, ru=None, th=None, emoji=None):
+    p = doc.add_paragraph()
+    # буква-индекс — чёрная
+    idx = p.add_run(f"{letter}. ")
+    idx.font.bold = True
+    idx.font.color.rgb = BLACK
+    idx.font.size = Pt(12)
+    # эмодзи (если есть)
+    if emoji:
+        ee = p.add_run(f"{emoji} ")
+        ee.font.bold = True
+        ee.font.size = Pt(12)
+    # английское слово — жёлтое, bold
+    en_run = p.add_run(en)
+    en_run.font.bold = True
+    en_run.font.color.rgb = GOLD
+    en_run.font.size = Pt(12)
+    # RU — тёмно-красный курсив
+    if ru:
+        p.add_run(" — ")
+        rr = p.add_run(ru)
+        rr.font.italic = True
+        rr.font.color.rgb = DARK_RED
+    # TH — тёмно-зелёный курсив
+    if th:
+        p.add_run(" — ")
+        tt = p.add_run(th)
+        tt.font.italic = True
+        tt.font.color.rgb = DARK_GREEN
+        tt.font.name = THAI_FONT_NAME
+
+def add_exercise(doc, idx, en, ru=None, th=None):
+    p = doc.add_paragraph()
+    run_black(p, f"{idx}) ", bold=True)  # номер — чёрный bold
+    prompt_line(p, en)                   # основная строка (жёлтая) + чёрные подчёркнутые вставки
+    if ru:
+        line_ru(doc, ru)
+    if th:
+        line_th(doc, th)
+
+def add_answer_block(doc, answer_en, explanation_en):
+    """
+    Ответы: фиолетовый (EN-only) Answer: <...> — <explanation>
+    Переводы RU/TH идут отдельными строками выше (как и в упражнении).
+    """
+    p = doc.add_paragraph()
+    a = p.add_run("Answer: ")
+    a.font.bold = True
+    a.font.color.rgb = PURPLE
+    b = p.add_run(f"{answer_en} — {explanation_en}")
+    b.font.color.rgb = PURPLE
+
+# ---------- Контент (как согласовали) ----------
+content = {
+    "title": "🏠 Control Test — 12 Tenses (Rentals & Housing) — v4",
+    "theme_emoji": "🧰",
+    "vocab_title": "Vocabulary (Rentals & Housing)",
+    "explanation": [
+        {"title":"1) ✅ Present Simple — habits/routines. Form: V1 / V1+s.",
+         "ru":"Настоящее простое — привычки/распорядок. Формула: V1 / V1+s.",
+         "th":"ปัจจุบันธรรมดา — พฤติกรรม/กิจวัตร รูป: V1 / V1+s",
+         "examples":["Tenants pay rent monthly.","The landlord checks IDs.","We sign contracts here."],"i":"1"},
+        {"title":"2) ⏳ Past Simple — finished past event. Form: V2 / V-ed.",
+         "ru":"Прошедшее простое — завершённое действие в прошлом. V2 / V-ed.",
+         "th":"อดีตกาลธรรมดา — เหตุการณ์จบในอดีต รูป: V2 / V-ed",
+         "examples":["She moved out last week.","They paid the deposit yesterday.","I called the agent."],"i":"2"},
+        {"title":"3) 🔮 Future Simple — decisions/promises. Form: will + V1.",
+         "ru":"Будущее простое — решения/обещания. will + V1.",
+         "th":"อนาคตกาลธรรมดา — การตัดสินใจ/สัญญา will + V1",
+         "examples":["I will renew the lease.","We will fix the sink.","The owner will respond soon."],"i":"3"},
+        {"title":"4) 🔄 Present Continuous — happening now/temporary. Form: am/is/are + V-ing.",
+         "ru":"Настоящее продолженное — сейчас/временное. am/is/are + V-ing.",
+         "th":"ปัจจุบันต่อเนื่อง — ขณะนี้/ชั่วคราว am/is/are + V-ing",
+         "examples":["The plumber is repairing the pipe.","I am showing the apartment.","They are painting the walls."],"i":"4"},
+        {"title":"5) ⏪ Past Continuous — in progress at a past time. Form: was/were + V-ing.",
+         "ru":"Прошедшее продолженное — процесс в прошлом. was/were + V-ing.",
+         "th":"อดีตต่อเนื่อง — กำลังกระทำในอดีต was/were + V-ing",
+         "examples":["We were signing papers at 3 pm.","She was cleaning the flat.","They were moving furniture."],"i":"5"},
+        {"title":"6) 🛰️ Future Continuous — in progress at a future time. Form: will be + V-ing.",
+         "ru":"Будущее продолженное — процесс в будущем. will be + V-ing.",
+         "th":"อนาคตต่อเนื่อง — กำลังกระทำในอนาคต will be + V-ing",
+         "examples":["Tomorrow I will be meeting the landlord.","They will be inspecting units.","We will be moving in at noon."],"i":"6"},
+        {"title":"7) 🏁 Present Perfect — result now. Form: have/has + V3.",
+         "ru":"Настоящее совершённое — результат к настоящему. have/has + V3.",
+         "th":"ปัจจุบันสมบูรณ์ — ผลลัพธ์ตอนนี้ have/has + V3",
+         "examples":["I have paid the deposit.","They have signed the lease.","He has fixed the door."],"i":"7"},
+        {"title":"8) 🕰️ Past Perfect — earlier past. Form: had + V3.",
+         "ru":"Предпрошедшее — действие раньше другого прошлого. had + V3.",
+         "th":"อดีตก่อนอดีต — เกิดก่อนอีกเหตุการณ์ในอดีต had + V3",
+         "examples":["We had moved in before winter.","She had reported the issue.","They had checked IDs already."],"i":"8"},
+        {"title":"9) 🚀 Future Perfect — completed by a future point. Form: will have + V3.",
+         "ru":"Будущее совершённое — будет завершено к моменту. will have + V3.",
+         "th":"อนาคตสมบูรณ์ — เสร็จสิ้นก่อนจุดเวลาอนาคต will have + V3",
+         "examples":["By Friday, we will have painted the room.","I will have paid all bills.","They will have renewed the lease."],"i":"9"},
+        {"title":"10) 🌱 Present Perfect Continuous — duration to now. Form: have/has been + V-ing.",
+         "ru":"Наст. сов. продолж. — длительность до настоящего. have/has been + V-ing.",
+         "th":"ปัจจุบันสมบูรณ์ต่อเนื่อง — ระยะเวลาถึงปัจจุบัน have/has been + V-ing",
+         "examples":["We have been looking for a flat for weeks.","She has been waiting at the office.","They have been renovating the kitchen."],"i":"10"},
+        {"title":"11) 🧭 Past Perfect Continuous — duration before past point. Form: had been + V-ing.",
+         "ru":"Предпрош. продолж. — длительность до прошлого момента. had been + V-ing.",
+         "th":"อดีตก่อนอดีตต่อเนื่อง — ระยะเวลาก่อนจุดในอดีต had been + V-ing",
+         "examples":["I had been negotiating for months.","They had been living there since 2019.","He had been fixing leaks all day."],"i":"11"},
+        {"title":"12) 🔭 Future Perfect Continuous — duration until future point. Form: will have been + V-ing.",
+         "ru":"Буд. сов. продолж. — длит. к будущему моменту. will have been + V-ing.",
+         "th":"อนาคตสมบูรณ์ต่อเนื่อง — ระยะเวลาถึงจุดเวลาอนาคต will have been + V-ing",
+         "examples":["By June, we will have been renting for a year.","She will have been managing the unit for months.","They will have been renovating for weeks."],"i":"12"},
+    ],
+    # 30 заданий на грамматику (с ответами)
+    "practice": [
+        {"en":"The tenant usually [[(pay)]] rent on the first of each month.",
+         "ru":"Обычно арендатор платит аренду в первый день месяца.",
+         "th":"โดยปกติผู้เช่าจ่ายค่าเช่าในวันแรกของทุกเดือน",
+         "answer_en":"pays","explain_en":"Present Simple (habit): S + V1/V1+s."},
+        {"en":"We [[(inspect)]] the property at 10 am yesterday.",
+         "ru":"Мы осмотрели объект вчера в 10 утра.",
+         "th":"เราได้ตรวจสอบทรัพย์สินเมื่อวาน 10 โมง",
+         "answer_en":"inspected","explain_en":"Past Simple: V2/V-ed (finished past)."},
+        {"en":"I [[(be+meet)]] the landlord at noon tomorrow.",
+         "ru":"Я буду встречаться с арендодателем завтра в полдень.",
+         "th":"ฉันจะกำลังพบเจ้าของบ้านพรุ่งนี้เที่ยง",
+         "answer_en":"will be meeting","explain_en":"Future Continuous: will be + V-ing."},
+        {"en":"They [[(have+sign)]] the lease already.",
+         "ru":"Они уже подписали договор аренды.",
+         "th":"พวกเขาได้ลงนามในสัญญาแล้ว",
+         "answer_en":"have signed","explain_en":"Present Perfect: have/has + V3 (result now)."},
+        {"en":"By the time we arrived, the cleaner [[(had+finish)]] the kitchen.",
+         "ru":"К нашему приезду уборщик закончил кухню.",
+         "th":"ตอนที่เรามาถึง แม่บ้านได้ทำความสะอาดครัวเสร็จแล้ว",
+         "answer_en":"had finished","explain_en":"Past Perfect: had + V3 (earlier past)."},
+        {"en":"By Friday, the agent [[(will have+prepare)]] the new contract.",
+         "ru":"К пятнице агент подготовит новый договор.",
+         "th":"ภายในวันศุกร์ ตัวแทนจะเตรียมสัญญาฉบับใหม่เสร็จ",
+         "answer_en":"will have prepared","explain_en":"Future Perfect: will have + V3."},
+        {"en":"She [[(is+show)]] the apartment to clients right now.",
+         "ru":"Сейчас она показывает квартиру клиентам.",
+         "th":"ตอนนี้เธอกำลังพาชมห้องให้ลูกค้า",
+         "answer_en":"is showing","explain_en":"Present Continuous: am/is/are + V-ing."},
+        {"en":"At 3 pm yesterday, we [[(were+discuss)]] the rental terms.",
+         "ru":"Вчера в 15:00 мы обсуждали условия аренды.",
+         "th":"เมื่อวานบ่ายสาม เรากำลังหารือเงื่อนไขการเช่า",
+         "answer_en":"were discussing","explain_en":"Past Continuous: was/were + V-ing."},
+        {"en":"Next week at this time, I [[(will be+move)]] into the new place.",
+         "ru":"На следующей неделе в это время я буду переезжать.",
+         "th":"สัปดาห์หน้าช่วงเวลานี้ ฉันจะกำลังย้ายเข้า",
+         "answer_en":"will be moving","explain_en":"Future Continuous: will be + V-ing."},
+        {"en":"We [[(have been+wait)]] for the repair team since morning.",
+         "ru":"Мы ждём ремонтную бригаду с утра (и до сих пор).",
+         "th":"เรารอทีมซ่อมตั้งแต่เช้า (ถึงตอนนี้)",
+         "answer_en":"have been waiting","explain_en":"Present Perfect Continuous: have/has been + V-ing."},
+        {"en":"Before 2024, they [[(had been+live)]] in that building for five years.",
+         "ru":"До 2024 года они жили в том доме пять лет.",
+         "th":"ก่อนปี 2024 พวกเขาอาศัยในตึกนั้นมา 5 ปี",
+         "answer_en":"had been living","explain_en":"Past Perfect Continuous: had been + V-ing."},
+        {"en":"By July, the workers [[(will have been+renovate)]] the lobby for three months.",
+         "ru":"К июлю рабочие будут ремонтировать лобби уже три месяца.",
+         "th":"ภายในเดือนกรกฎาคม ช่างจะทำการปรับปรุงล็อบบี้ครบสามเดือน",
+         "answer_en":"will have been renovating","explain_en":"Future Perfect Continuous: will have been + V-ing."},
+        {"en":"The lease usually [[(run)]] for one year.",
+         "ru":"Срок договора обычно длится один год.",
+         "th":"สัญญาเช่ามักมีระยะเวลา 1 ปี",
+         "answer_en":"runs","explain_en":"Present Simple (general truth)."},
+        {"en":"We [[(were+review)]] complaints when the owner called.",
+         "ru":"Мы разбирали жалобы, когда позвонил владелец.",
+         "th":"เรากำลังตรวจข้อร้องเรียนตอนเจ้าของโทรมา",
+         "answer_en":"were reviewing","explain_en":"Past Continuous (action in progress when interrupted)."},
+        {"en":"I [[(have+submit)]] all documents; please check.",
+         "ru":"Я подал все документы; проверьте, пожалуйста.",
+         "th":"ฉันได้ยื่นเอกสารทั้งหมดแล้ว กรุณาตรวจสอบ",
+         "answer_en":"have submitted","explain_en":"Present Perfect (result available)."},
+        {"en":"By the time you come, we [[(will have+change)]] the locks.",
+         "ru":"К вашему приходу мы сменим замки.",
+         "th":"ก่อนที่คุณจะมา เราจะเปลี่ยนกุญแจเสร็จแล้ว",
+         "answer_en":"will have changed","explain_en":"Future Perfect (completed by future time)."},
+        {"en":"They [[(had+resolve)]] the issue before the inspection.",
+         "ru":"Они решили проблему до инспекции.",
+         "th":"พวกเขาแก้ปัญหาเรียบร้อยก่อนการตรวจ",
+         "answer_en":"had resolved","explain_en":"Past Perfect (earlier past)."},
+        {"en":"We [[(have been+negotiate)]] with the owner all week.",
+         "ru":"Мы ведём переговоры с владельцем всю неделю.",
+         "th":"เราเจรจากับเจ้าของมาตลอดทั้งสัปดาห์",
+         "answer_en":"have been negotiating","explain_en":"Present Perfect Continuous (duration up to now)."},
+        {"en":"The agent [[(is+prepare)]] a move-in checklist now.",
+         "ru":"Агент сейчас готовит чек-лист заселения.",
+         "th":"ขณะนี้ตัวแทนกำลังเตรียมเช็กลิสต์เข้าอยู่",
+         "answer_en":"is preparing","explain_en":"Present Continuous (now)."},
+        {"en":"Tenants [[(reported)]] noise last night.",
+         "ru":"Вчера ночью жильцы сообщили о шуме.",
+         "th":"เมื่อคืนผู้เช่าได้รายงานเสียงรบกวน",
+         "answer_en":"reported","explain_en":"Past Simple (finished past)."},
+        {"en":"At 7 pm, we [[(will be+hand)]] the keys to you.",
+         "ru":"В 19:00 мы будем передавать вам ключи.",
+         "th":"เวลา 19:00 เราจะกำลังส่งมอบกุญแจให้คุณ",
+         "answer_en":"will be handing","explain_en":"Future Continuous (at a future time)."},
+        {"en":"She [[(has+read)]] the house rules already.",
+         "ru":"Она уже прочитала правила дома.",
+         "th":"เธอได้อ่านกฎของบ้านแล้ว",
+         "answer_en":"has read","explain_en":"Present Perfect (result now)."},
+        {"en":"By noon, the cleaner [[(will have+finish)]] the corridor.",
+         "ru":"К полудню уборщик закончит коридор.",
+         "th":"ก่อนเที่ยง แม่บ้านจะทำความสะอาดทางเดินเสร็จ",
+         "answer_en":"will have finished","explain_en":"Future Perfect."},
+        {"en":"We [[(had been+wait)]] for the plumber for two hours before he arrived.",
+         "ru":"Мы ждали сантехника два часа до его прихода.",
+         "th":"เรารอช่างประปาสองชั่วโมงก่อนเขาจะมา",
+         "answer_en":"had been waiting","explain_en":"Past Perfect Continuous."},
+        {"en":"I [[(have+check)]] the meter readings; all good.",
+         "ru":"Я проверил показания счётчиков; всё ок.",
+         "th":"ฉันตรวจมิเตอร์แล้ว ทุกอย่างเรียบร้อย",
+         "answer_en":"have checked","explain_en":"Present Perfect."},
+        {"en":"They [[(were+paint)]] the balcony when it started raining.",
+         "ru":"Они красили балкон, когда пошёл дождь.",
+         "th":"พวกเขากำลังทาสีระเบียงตอนฝนเริ่มตก",
+         "answer_en":"were painting","explain_en":"Past Continuous."},
+        {"en":"By next week, we [[(will have+install)]] new smoke detectors.",
+         "ru":"К следующей неделе мы установим новые дымовые датчики.",
+         "th":"ภายในสัปดาห์หน้า เราจะติดตั้งเครื่องตรวจจับควันเสร็จ",
+         "answer_en":"will have installed","explain_en":"Future Perfect."},
+        {"en":"He [[(has been+live)]] here since May.",
+         "ru":"Он живёт здесь с мая.",
+         "th":"เขาอาศัยอยู่ที่นี่ตั้งแต่เดือนพฤษภาคม",
+         "answer_en":"has been living","explain_en":"Present Perfect Continuous (since/for)."},
+        {"en":"They [[(had+pay)]] the balance before the keys were handed over.",
+         "ru":"Они оплатили остаток до передачи ключей.",
+         "th":"พวกเขาชำระเงินส่วนที่เหลือก่อนส่งมอบกุญแจ",
+         "answer_en":"had paid","explain_en":"Past Perfect."},
+        {"en":"This time tomorrow, I [[(will be+sign)]] the extension.",
+         "ru":"Завтра в это время я буду подписывать продление.",
+         "th":"พรุ่งนี้เวลานี้ฉันจะกำลังเซ็นต่อสัญญา",
+         "answer_en":"will be signing","explain_en":"Future Continuous."},
+    ],
+    # Vocab-блок (слово — RU — TH), плюс упражнения по вокабу (с ответами)
+    "vocab": [
+        {"en":"tenant","ru":"арендатор","th":"ผู้เช่า","emoji":"👤"},
+        {"en":"landlord / landlady","ru":"арендодатель","th":"เจ้าของบ้าน","emoji":"🧑‍💼"},
+        {"en":"lease (rental agreement)","ru":"договор аренды","th":"สัญญาเช่า","emoji":"📄"},
+        {"en":"security deposit","ru":"страховой депозит","th":"เงินมัดจำ","emoji":"💰"},
+        {"en":"utility bills","ru":"коммунальные платежи","th":"ค่าสาธารณูปโภค","emoji":"💡"},
+        {"en":"maintenance","ru":"техобслуживание/ремонт","th":"การบำรุงรักษา","emoji":"🛠️"},
+        {"en":"inspection","ru":"осмотр/проверка","th":"การตรวจสอบ","emoji":"🔎"},
+        {"en":"notice (move-out notice)","ru":"уведомление (о выезде)","th":"หนังสือแจ้งออก","emoji":"📬"},
+        {"en":"move-in / move-out","ru":"въезд / выезд","th":"ย้ายเข้า / ย้ายออก","emoji":"🚚"},
+        {"en":"furnishings","ru":"мебель/обстановка","th":"เฟอร์นิเจอร์","emoji":"🛋️"},
+        {"en":"inventory list","ru":"опись имущества","th":"บัญชีทรัพย์สิน","emoji":"📋"},
+        {"en":"keys / access card","ru":"ключи / карта доступа","th":"กุญแจ / บัตรเข้าออก","emoji":"🔑"},
+        {"en":"parking permit","ru":"разрешение на парковку","th":"บัตรอนุญาตจอดรถ","emoji":"🅿️"},
+        {"en":"house rules","ru":"правила дома","th":"กฎของบ้าน","emoji":"📘"},
+        {"en":"late fee","ru":"штраф за просрочку","th":"ค่าปรับล่าช้า","emoji":"⏰"},
+        {"en":"renewal","ru":"продление","th":"การต่อสัญญา","emoji":"🔁"},
+        {"en":"termination","ru":"расторжение","th":"การยกเลิกสัญญา","emoji":"🛑"},
+        {"en":"damage","ru":"повреждение","th":"ความเสียหาย","emoji":"🧱"},
+        {"en":"repairs","ru":"ремонтные работы","th":"การซ่อมแซม","emoji":"🔧"},
+        {"en":"meter readings","ru":"показания счётчиков","th":"เลขมิเตอร์","emoji":"📟"},
+        {"en":"common area","ru":"общая зона","th":"พื้นที่ส่วนกลาง","emoji":"🏘️"},
+        {"en":"garbage disposal","ru":"вывоз мусора","th":"การจัดการขยะ","emoji":"🗑️"},
+        {"en":"pet policy","ru":"правила о питомцах","th":"นโยบายสัตว์เลี้ยง","emoji":"🐾"},
+        {"en":"sublet","ru":"сдавать в субаренду","th":"ปล่อยเช่าช่วง","emoji":"🔄"},
+    ],
+    "vocab_ex": [
+        {"en":"Use [[tenant]] in a sentence about on-time payment.",
+         "ru":"Используй «tenant» в предложении про оплату вовремя.",
+         "th":"ใช้ tenant ในประโยคเกี่ยวกับการจ่ายตรงเวลา",
+         "answer_en":"The tenant has always paid on time.","explain_en":"Present Perfect for life pattern."},
+        {"en":"Make a question with [[landlord]] about repairs next week.",
+         "ru":"Сделай вопрос к арендодателю о ремонте на след. неделе.",
+         "th":"ตั้งคำถามถึงเจ้าของบ้านเรื่องซ่อมสัปดาห์หน้า",
+         "answer_en":"Will the landlord repair the sink next week?","explain_en":"Future Simple question."},
+        {"en":"Use [[lease]] to state a rule (present).",
+         "ru":"Используй «lease», чтобы обозначить правило (настоящее).",
+         "th":"ใช้ lease เพื่อระบุข้อกำหนด (ปัจจุบัน)",
+         "answer_en":"The lease requires quiet hours after 10 pm.","explain_en":"Present Simple rule."},
+        {"en":"Use [[security deposit]] (completed in the past).",
+         "ru":"Используй «security deposit» (завершено в прошлом).",
+         "th":"ใช้ security deposit (เกิดขึ้นในอดีต)",
+         "answer_en":"They paid the security deposit yesterday.","explain_en":"Past Simple."},
+        {"en":"Write a sentence with [[utility bills]] (result by now).",
+         "ru":"Предложение с «utility bills» (результат к настоящему).",
+         "th":"ประโยคกับ utility bills (ผลถึงปัจจุบัน)",
+         "answer_en":"We have paid all utility bills.","explain_en":"Present Perfect."},
+        {"en":"Use [[maintenance]] (duration up to now).",
+         "ru":"Используй «maintenance» (длится до настоящего).",
+         "th":"ใช้ maintenance (ต่อเนื่องถึงปัจจุบัน)",
+         "answer_en":"The building has been under maintenance for a week.","explain_en":"Present Perfect Continuous."},
+        {"en":"Use [[inspection]] with a specific time in the past.",
+         "ru":"«inspection» со временем в прошлом.",
+         "th":"inspection กับเวลาที่ชัดเจนในอดีต",
+         "answer_en":"The inspection started at 9 am yesterday.","explain_en":"Past Simple."},
+        {"en":"Ask about [[notice]] period politely.",
+         "ru":"Спроси вежливо о сроке «notice».",
+         "th":"ถามอย่างสุภาพเกี่ยวกับระยะเวลา notice",
+         "answer_en":"Could you tell me the notice period, please?","explain_en":"Polite question."},
+        {"en":"Use [[move-in]] with a future plan in progress.",
+         "ru":"«move-in» с будущим процессом.",
+         "th":"move-in กับเหตุการณ์กำลังเกิดในอนาคต",
+         "answer_en":"We will be moving in next Monday afternoon.","explain_en":"Future Continuous."},
+        {"en":"Use [[move-out]] with earlier-past meaning.",
+         "ru":"«move-out» с предпрошедшим значением.",
+         "th":"move-out กับเหตุการณ์ก่อนอดีต",
+         "answer_en":"We had moved out before the renovation started.","explain_en":"Past Perfect."},
+        {"en":"Use [[furnishings]] with a present rule.",
+         "ru":"«furnishings» с правилом в настоящем.",
+         "th":"furnishings กับกฎในปัจจุบัน",
+         "answer_en":"Furnishings must remain in the unit.","explain_en":"Present Simple obligation."},
+        {"en":"Use [[inventory list]] with completion by a future time.",
+         "ru":"«inventory list» — завершённость к будущему времени.",
+         "th":"inventory list เสร็จก่อนเวลาอนาคต",
+         "answer_en":"We will have completed the inventory list by 5 pm.","explain_en":"Future Perfect."},
+        {"en":"Use [[keys]] in a passive past sentence.",
+         "ru":"«keys» в пассивном в прошедшем.",
+         "th":"keys ในประโยคถูกกระทำ (อดีต)",
+         "answer_en":"The keys were handed over yesterday.","explain_en":"Past Simple passive."},
+        {"en":"Use [[parking permit]] in a present rule sentence.",
+         "ru":"«parking permit» в предложении-правиле.",
+         "th":"parking permit ในประโยคกฎ",
+         "answer_en":"A parking permit is required for overnight parking.","explain_en":"Present Simple rule."},
+        {"en":"Use [[house rules]] with a polite request.",
+         "ru":"«house rules» с вежливой просьбой.",
+         "th":"house rules กับคำขอสุภาพ",
+         "answer_en":"Please follow the house rules during quiet hours.","explain_en":"Polite imperative."},
+        {"en":"Use [[renewal]] with a decision now.",
+         "ru":"«renewal» — решение сейчас.",
+         "th":"renewal กับการตัดสินใจตอนนี้",
+         "answer_en":"I will renew the lease this week.","explain_en":"Future Simple decision."},
+        {"en":"Use [[damage]] with duration before a past point.",
+         "ru":"«damage» — длительность до прошлого момента.",
+         "th":"damage ระยะเวลาก่อนอดีต",
+         "answer_en":"The ceiling had been damaged for months before repairs.","explain_en":"Past Perfect Continuous."},
+        {"en":"Use [[repairs]] with duration until a future point.",
+         "ru":"«repairs» — длительность к будущему моменту.",
+         "th":"repairs ระยะเวลาถึงอนาคต",
+         "answer_en":"By Friday, repairs will have been ongoing for two weeks.","explain_en":"Future Perfect Continuous."},
+    ],
+    "exit_hw": [
+        {"en":"Make 3 sentences using [[termination]] (any tenses).",
+         "ru":"Сделай 3 предложения с «termination» (любой tense).",
+         "th":"เขียน 3 ประโยคโดยใช้ termination (กาลใดก็ได้)",
+         "answer_en":"e.g., We terminated the lease; It has been terminated; We will terminate it next month.",
+         "explain_en":"Any correct tense/context is acceptable."},
+        {"en":"Write a polite email line about [[late fee]] (present rule).",
+         "ru":"Напиши вежливую строку про «late fee» (правило).",
+         "th":"เขียนประโยคสุภาพเกี่ยวกับ late fee (กฎปัจจุบัน)",
+         "answer_en":"Please note that a late fee applies after the 5th of each month.",
+         "explain_en":"Present Simple rule."}
+    ]
+}
+
+# ---------- Сборка DOCX (answers version) ----------
+doc = new_doc()
+add_title(doc, content["title"] + " — Answers")
+
+# Explanation
+add_section_title(doc, "👩‍🏫", "Explanation")
+for b in content["explanation"]:
+    p = doc.add_paragraph()
+    r = p.add_run(b["title"])
+    r.font.bold = True
+    r.font.color.rgb = RGBColor(180,90,0)  # тёмно-оранжевый, читаемый
+    examples_block(doc, b.get("examples", []), b.get("i", "1"))
+    if b.get("ru"): line_ru(doc, b["ru"])
+    if b.get("th"): line_th(doc, b["th"])
+    add_blank(doc)
+
+# Practice — Answers
+doc.add_page_break()
+add_section_title(doc, "🧠", "Practice — Answers")
+for i, ex in enumerate(content["practice"], 1):
+    add_exercise(doc, i, ex["en"], ex.get("ru"), ex.get("th"))
+    add_answer_block(doc, ex["answer_en"], ex["explain_en"])
+
+# Vocabulary (word bank)
+doc.add_page_break()
+add_section_title(doc, content.get("theme_emoji","🧰"), content.get("vocab_title","Vocabulary"))
+letters = "abcdefghijklmnopqrstuvwxyz"
+for i, w in enumerate(content["vocab"]):
+    letter = letters[i] if i < 26 else letters[i-26]*2
+    add_word_bank_item(doc, letter, w["en"], w.get("ru"), w.get("th"), w.get("emoji"))
+
+# Vocabulary Exercises — Answers
+doc.add_page_break()
+add_section_title(doc, "🛄", "Vocabulary Exercises — Answers")
+for i, ex in enumerate(content["vocab_ex"], 1):
+    add_exercise(doc, i, ex["en"], ex.get("ru"), ex.get("th"))
+    add_answer_block(doc, ex["answer_en"], ex["explain_en"])
+
+# Exit — Answers
+doc.add_page_break()
+add_section_title(doc, "🧾", "Exit check & Homework — Answers")
+for i, ex in enumerate(content["exit_hw"], 1):
+    add_exercise(doc, i, ex["en"], ex.get("ru"), ex.get("th"))
+    add_answer_block(doc, ex["answer_en"], ex["explain_en"])
+
+out_path = "cha_test_12tenses_rentals_with_answers_v4.docx"
+doc.save(out_path)
+print(f"OK -> {out_path}")
