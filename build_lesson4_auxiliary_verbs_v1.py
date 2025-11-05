@@ -6,14 +6,16 @@
 #   (тёмно-красный курсив), а подчёркнутые фрагменты и капс из EN — отзеркалить в RU (чёрный, bold+underline, CAPS).
 # - В Vocabulary после RU добавить « — TH» перевод модальных/вспомогательных.
 
+import os
+import re
+import time
+
+from deep_translator import GoogleTranslator
 from docx import Document
-from docx.shared import Pt, RGBColor, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from deep_translator import GoogleTranslator
-import re
-import os
+from docx.shared import Pt, RGBColor, Cm
 
 # ---------- Цвета и стили ----------
 GOLD = RGBColor(184, 134, 11)
@@ -97,11 +99,15 @@ RU_VOCAB = {
 
 # Простейший «переводчик» на RU (черновой): токен-замены для базовых слов. Остальное оставляем как есть.
 RU_TOKEN_MAP = {
-    "i": "я", "you": "ты", "we": "мы", "they": "они", "he": "он", "she": "она", "it": "это",
-    "can": "может", "could": "мог(ла)/могли", "may": "может", "might": "возможно", "must": "должен",
-    "have": "имеем/имеет/имею", "has": "имеет", "had": "имел/имели", "to": "", "be": "быть",
+    "i": "я", "you": "ты", "we": "мы", "they": "они", "he": "он", "she": "она",
+    "it": "это",
+    "can": "может", "could": "мог(ла)/могли", "may": "может",
+    "might": "возможно", "must": "должен",
+    "have": "имеем/имеет/имею", "has": "имеет", "had": "имел/имели", "to": "",
+    "be": "быть",
     "am": "есть", "is": "есть", "are": "есть", "was": "был", "were": "были",
-    "will": "будет", "shall": "будет", "would": "бы", "should": "следует", "do": "делать", "does": "делает", "did": "сделал",
+    "will": "будет", "shall": "будет", "would": "бы", "should": "следует",
+    "do": "делать", "does": "делает", "did": "сделал",
     "not": "не", "no": "нет", "yes": "да", "and": "и", "or": "или", "but": "но",
 }
 
@@ -207,7 +213,8 @@ def is_section_title(text: str) -> bool:
         return False
     t = text.strip()
     # Заголовки в уроках часто содержат эмодзи или оканчиваются на ':' как в "✍️ Examples:"
-    return bool(t and (t.endswith(":") or t.startswith("#") or (len(t) <= 64 and any(ch for ch in t if ord(ch) > 1000))))
+    return bool(t and (t.endswith(":") or t.startswith("#") or (
+                len(t) <= 64 and any(ch for ch in t if ord(ch) > 1000))))
 
 
 def is_examples_label(text: str) -> bool:
@@ -282,17 +289,27 @@ def append_th_to_vocab_line(dst_p):
 
 
 def build():
+    start_ts = time.time()
+    print("[lesson4] Start generation")
     src_path = os.path.join(os.getcwd(), SRC_NAME)
     if not os.path.exists(src_path):
         raise FileNotFoundError(f"Source DOCX not found: {src_path}")
+    print(f"[lesson4] Source: {SRC_NAME}")
     src = Document(src_path)
 
     out = new_doc()
+    print("[lesson4] New document initialized")
 
     # Простая машина состояний по секциям
     section = None
+    ru_lines = 0
+    vocab_th_added = 0
+    vocab_ru_added = 0
 
-    for p in src.paragraphs:
+    total = len(src.paragraphs)
+    print(f"[lesson4] Paragraphs: {total}")
+
+    for idx, p in enumerate(src.paragraphs, 1):
         text = p.text or ""
         # Клонируем исходную строку как есть
         new_p = clone_paragraph(out, p)
@@ -300,19 +317,35 @@ def build():
         # Определяем смену секции по ключевым словам
         t = text.strip().lower()
         if "vocabulary" in t and len(t) < 64:
+            if section != "vocab":
+                print("[lesson4] --> Section: Vocabulary")
             section = "vocab"
         elif "vocabulary exercises" in t:
+            if section != "vocab_ex":
+                print("[lesson4] --> Section: Vocabulary Exercises")
             section = "vocab_ex"
         elif "practice" in t:
+            if section != "practice":
+                print("[lesson4] --> Section: Practice")
             section = "practice"
         elif "exit check" in t or "homework" in t:
+            if section != "exit":
+                print("[lesson4] --> Section: Exit check & Homework")
             section = "exit"
         elif "explanation" in t or "examples" in t:
+            if section != "expl":
+                print("[lesson4] --> Section: Explanation/Examples")
             section = "expl"
 
         # Если это пункт словаря — добавим TH
         if section == "vocab" and is_vocab_item(text):
-            append_th_to_vocab_line(new_p)
+            before = new_p.text
+            # функция вернёт, добавляли ли RU/TH
+            ru_added, th_added = append_th_to_vocab_line(new_p)
+            if ru_added:
+                vocab_ru_added += 1
+            if th_added:
+                vocab_th_added += 1
             continue  # для словаря RU-строку отдельную не вставляем (она уже на линии)
 
         # Для всех остальных контентных EN строк — добавляем RU строку
@@ -328,8 +361,18 @@ def build():
 
         # Вставляем RU перевод под строкой
         add_ru_line_for_en_paragraph(out, p)
+        ru_lines += 1
+
+        # прогресс каждые 20 параграфов
+        if idx % 20 == 0:
+            print(f"[lesson4] Progress: {idx}/{total} paragraphs processed")
 
     out.save(OUT_NAME)
+    dur = time.time() - start_ts
+    print("[lesson4] Saved:", OUT_NAME)
+    print(
+        f"[lesson4] Summary: RU lines added={ru_lines}, vocab TH added={vocab_th_added}, vocab RU added={vocab_ru_added}")
+    print(f"[lesson4] Done in {dur:.1f}s")
 
 
 if __name__ == "__main__":
