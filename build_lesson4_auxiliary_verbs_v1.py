@@ -214,7 +214,7 @@ def is_section_title(text: str) -> bool:
     t = text.strip()
     # Заголовки в уроках часто содержат эмодзи или оканчиваются на ':' как в "✍️ Examples:"
     return bool(t and (t.endswith(":") or t.startswith("#") or (
-                len(t) <= 64 and any(ch for ch in t if ord(ch) > 1000))))
+            len(t) <= 64 and any(ch for ch in t if ord(ch) > 1000))))
 
 
 def is_examples_label(text: str) -> bool:
@@ -259,6 +259,8 @@ def append_th_to_vocab_line(dst_p):
                 break
 
     # Если RU уже есть в строке — просто добавляем TH
+    ru_added = False
+    th_added = False
     if " — " in full:
         if th:
             rr = dst_p.add_run(" — ")
@@ -268,7 +270,8 @@ def append_th_to_vocab_line(dst_p):
             tr.font.italic = True
             tr.font.color.rgb = DARK_GREEN
             tr.font.name = THAI_FONT_NAME
-        return
+            th_added = True
+        return ru_added, th_added
 
     # Если RU не было — добавляем RU и TH
     if ru:
@@ -278,6 +281,7 @@ def append_th_to_vocab_line(dst_p):
         rr_run = dst_p.add_run(ru)
         rr_run.font.italic = True
         rr_run.font.color.rgb = DARK_RED
+        ru_added = True
     if th:
         th_sep = dst_p.add_run(" — ")
         th_sep.font.italic = True
@@ -286,6 +290,8 @@ def append_th_to_vocab_line(dst_p):
         tr.font.italic = True
         tr.font.color.rgb = DARK_GREEN
         tr.font.name = THAI_FONT_NAME
+        th_added = True
+    return ru_added, th_added
 
 
 def build():
