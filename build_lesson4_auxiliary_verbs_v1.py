@@ -11,6 +11,7 @@ from docx.shared import Pt, RGBColor, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from deep_translator import GoogleTranslator
 import re
 import os
 
@@ -104,7 +105,8 @@ RU_TOKEN_MAP = {
     "not": "не", "no": "нет", "yes": "да", "and": "и", "or": "или", "but": "но",
 }
 
-WORD_RE = re.compile(r"([A-Za-z']+|\d+|\s+|[^A-Za-z\d\s])")
+# Инициализируем переводчик: auto -> ru
+TRANSLATOR = GoogleTranslator(source='auto', target='ru')
 
 
 def new_doc():
@@ -153,49 +155,47 @@ def clone_paragraph(dst_doc, src_p):
     return p
 
 
-def simple_ru_translate(en_text: str) -> str:
-    # очень грубая токен-замена, лишь чтобы строки были на месте
-    out = []
-    for tok in WORD_RE.findall(en_text):
-        low = tok.lower()
-        if low in RU_TOKEN_MAP:
-            tr = RU_TOKEN_MAP[low]
-            # сохраняем капс: если исходный токен весь в капсе — делаем капс
-            if tok.isupper():
-                tr = tr.upper()
-            out.append(tr)
-        else:
-            out.append(tok)
-    # убираем двойные пробелы
-    txt = re.sub(r"\s+", " ", "".join(out)).strip()
-    return txt
+def translate_ru(text: str) -> str:
+    if not text:
+        return ""
+    try:
+        return TRANSLATOR.translate(text)
+    except Exception:
+        # Фоллбек — вернуть исходный текст (чтобы не падать)
+        return text
 
 
 def add_ru_line_for_en_paragraph(dst_doc, src_p):
-    # Собираем RU в стиле: ( ... ) тёмно-красный, курсив; подчёркнутые EN-раны зеркалим чёрным bold+underline
+    """
+    Переводим каждый EN-run целиком на русский и собираем RU строку из таких фрагментов,
+    зеркалим подчёркнутые участки (чёрный bold+underline) и CAPS.
+    """
     p = dst_doc.add_paragraph()
-    # открывающая скобка
+    # открывающая скобка (красный курсив)
     r0 = p.add_run("(")
     r0.font.italic = True
     r0.font.color.rgb = DARK_RED
-    # порановая обработка
     for run in src_p.runs:
-        text = run.text
-        ru_piece = simple_ru_translate(text)
-        if not ru_piece:
+        src_text = run.text
+        if not src_text:
             continue
+        ru_piece = translate_ru(src_text)
+        # CAPS зеркалим
+        if src_text.isupper():
+            ru_piece = ru_piece.upper()
         r = p.add_run(ru_piece)
-        # базовый RU стиль
+        # базово RU — тёмно-красный курсив
         r.font.italic = True
         r.font.color.rgb = DARK_RED
-        # если EN run подчёркнут — делаем зеркально в RU фрагменте (чёрный + bold + underline)
-        if run.font and run.font.underline:
-            r.font.color.rgb = BLACK
-            r.font.bold = True
-            r.font.underline = True
-        # если EN текст весь капсом — делаем капсом и в RU фрагменте
-        if text.isupper():
-            r.text = r.text.upper()
+        # зеркалим подчёркивание (делаем чёрным, bold+underline)
+        try:
+            if run.font and run.font.underline:
+                r.font.color.rgb = BLACK
+                r.font.bold = True
+                r.font.underline = True
+                r.font.italic = False
+        except Exception:
+            pass
     # закрывающая скобка
     rZ = p.add_run(")")
     rZ.font.italic = True
