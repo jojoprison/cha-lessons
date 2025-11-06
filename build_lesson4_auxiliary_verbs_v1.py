@@ -310,6 +310,46 @@ def load_translations_from_source(path: str) -> dict:
     return tr
 
 
+def load_answers_from_source(path: str) -> dict:
+    """
+    Читает ответы из текстового файла-источника. Формат:
+    <EN exercise line>
+    Answer: ...
+    คำตอบ: ...
+    [пустая строка или следующий пункт]
+
+    Возвращает dict[norm_exact(EN line)] -> ["Answer: ...", "คำตอบ: ..."]
+    """
+    if not path or not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        lines = [ln.rstrip("\n") for ln in f]
+    i = 0
+    ans = {}
+    while i < len(lines):
+        en = lines[i].strip()
+        if not en:
+            i += 1
+            continue
+        # пропускаем заголовки блоков
+        if en in BLOCK_TITLES:
+            i += 1
+            continue
+        # ожидаем пары строк Answer/คำตอบ
+        if i + 2 <= len(lines) - 1 and lines[i + 1].lstrip().startswith("Answer:") and lines[i + 2].lstrip().startswith("คำตอบ:"):
+            key = norm_exact(en)
+            a_en = lines[i + 1].strip()
+            a_th = lines[i + 2].strip()
+            ans[key] = [a_en, a_th]
+            i += 3
+            # пропускаем возможную разделяющую пустую строку
+            if i < len(lines) and not lines[i].strip():
+                i += 1
+            continue
+        i += 1
+    return ans
+
+
 def collect_highlight_tokens(src_p) -> list:
     """Собираем токены (верхний регистр) из EN-абзаца для зеркального подчеркивания в RU."""
     tokens = []
@@ -518,6 +558,10 @@ def build():
                         default="lesson4_translations.json")
     parser.add_argument("--translations-source", type=str,
                         default="lesson4_translations_source.txt")
+    parser.add_argument("--with-answers", dest="with_answers", action="store_true", default=False,
+                        help="Вставлять ответы после строк заданий (фиолетовым), читаются из answers source")
+    parser.add_argument("--answers-source", type=str, default="lesson4_answers_source.txt",
+                        help="Текстовый файл с ответами: EN line, затем 'Answer:' и 'คำตอบ:'")
     # (fallback авто-перевода удалён)
     args = parser.parse_args()
     start_ts = time.time()
@@ -540,6 +584,12 @@ def build():
         tr_map = load_translations_json(args.translations)
         print(
             f"[lesson4] Translations loaded from: {args.translations} ({len(tr_map)} entries)")
+
+    # Грузим ответы (если включено)
+    ans_map = {}
+    if args.with_answers and args.answers_source and os.path.exists(args.answers_source):
+        ans_map = load_answers_from_source(args.answers_source)
+        print(f"[lesson4] Answers loaded from: {args.answers_source} ({sum(len(v) for v in ans_map.values())} lines)")
 
     # Простая машина состояний по секциям
     section = None
@@ -624,6 +674,15 @@ def build():
             else:
                 print(f"[lesson4][miss][TH] {key[:80]}")
         # Перевод добавляется только если есть в словаре; авто-перевод отключён
+
+        # Вставка ответов после переводов (если это упражнения)
+        if args.with_answers and section in ("practice", "vocab_ex", "exit"):
+            a = ans_map.get(key)
+            if a:
+                for line in a:
+                    ap = out.add_paragraph()
+                    ar = ap.add_run(line)
+                    ar.font.color.rgb = PURPLE
 
         # прогресс каждые 20 параграфов
         if idx % 20 == 0:
