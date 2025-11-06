@@ -1,3 +1,23 @@
+# Вспомогательные линии-переводы как в Cha
+def line_ru(doc, txt, size=11):
+    p = doc.add_paragraph()
+    r = p.add_run(f"({txt})")
+    r.font.italic = True
+    r.font.color.rgb = DARK_RED
+    r.font.size = Pt(size)
+
+
+def line_th(doc, txt, size=11):
+    p = doc.add_paragraph()
+    r = p.add_run(f"({txt})")
+    r.font.italic = True
+    r.font.color.rgb = DARK_GREEN
+    r.font.size = Pt(size)
+    r.font.name = THAI_FONT_NAME
+
+
+import argparse
+import json
 # -*- coding: utf-8 -*-
 # build_lesson4_auxiliary_verbs_v1.py
 # Генерит DOCX: cha_lesson_4_auxiliary_verbs_v1.docx на основе cha_lesson_4_auxiliary_verbs_lite_v3.docx
@@ -5,7 +25,6 @@
 # - Добавить RU строку после каждой EN строки в Explanation / Practice / Vocabulary Exercises / Exit check & Homework
 #   (тёмно-красный курсив), а подчёркнутые фрагменты и капс из EN — отзеркалить в RU (чёрный, bold+underline, CAPS).
 # - В Vocabulary после RU добавить « — TH» перевод модальных/вспомогательных.
-
 import os
 import re
 import time
@@ -236,6 +255,158 @@ def normalize_key(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip().lower())
 
 
+def norm_exact(s: str) -> str:
+    # Нормализация ключей для словаря переводов (без нижнего регистра)
+    return re.sub(r"\s+", " ", (s or "").strip())
+
+
+BLOCK_TITLES = {
+    "✏️ Lesson 4 — Auxiliary Verbs — Vocabulary: School & Stationery",
+    "👩‍🏫 Explanation",
+    "🧠 Practice",
+    "✏️ Vocabulary (School & Stationery)",
+    "✏️ Vocabulary",
+    "✏️ Vocabulary Exercises",
+    "🧾 Exit check & Homework",
+}
+
+
+def load_translations_json(path: str) -> dict:
+    if not path or not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    # нормализуем ключи
+    return {norm_exact(k): v for k, v in data.items()}
+
+
+def load_translations_from_source(path: str) -> dict:
+    """
+    Парсит файл, где EN строка идёт отдельно, а ниже 2 строки в скобках — RU и TH.
+    Игнорируем большие заголовки блоков и словарь Word bank.
+    """
+    if not path or not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        lines = [ln.rstrip("\n") for ln in f]
+    tr = {}
+    section = None
+    i = 0
+    while i < len(lines):
+        L = lines[i].strip()
+        if not L:
+            i += 1
+            continue
+        # Определяем секцию по заголовкам
+        low = L.lower()
+        if L in BLOCK_TITLES:
+            if "vocabulary" in low and "exercises" not in low:
+                section = "vocab"
+            elif "vocabulary exercises" in low:
+                section = "vocab_ex"
+            elif "practice" in low:
+                section = "practice"
+            elif "exit check" in low or "homework" in low:
+                section = "exit"
+            elif "explanation" in low:
+                section = "expl"
+            i += 1
+            continue
+        # Пропускаем шапки Word bank и сами элементы словаря — они не переводятся этим слоем
+        if section == "vocab":
+            i += 1
+            continue
+        # EN-строка — если следующая строка начинается на '(' — это RU, а следующая за ней — TH
+        if not L.startswith("("):
+            ru = th = None
+            if i + 1 < len(lines) and lines[i + 1].strip().startswith("("):
+                ru = lines[i + 1].strip()
+                if ru.startswith("(") and ru.endswith(")"):
+                    ru = ru[1:-1]
+            if i + 2 < len(lines) and lines[i + 2].strip().startswith("("):
+                th = lines[i + 2].strip()
+                if th.startswith("(") and th.endswith(")"):
+                    th = th[1:-1]
+            if ru or th:
+                tr[norm_exact(L)] = {"ru": ru, "th": th}
+                i += 3
+                continue
+        i += 1
+    return tr
+
+
+def collect_highlight_tokens(src_p) -> list:
+    """Собираем токены (верхний регистр) из EN-абзаца для зеркального подчеркивания в RU."""
+    tokens = []
+    for run in src_p.runs:
+        t = run.text or ""
+        # захватываем куски вида ALL CAPS (включая фразы с пробелами)
+        for m in re.finditer(r"[A-Z][A-Z ]+[A-Z]", t):
+            tok = m.group(0).strip()
+            if tok not in tokens:
+                tokens.append(tok)
+        # если ран подчёркнут и без капса — попробуем захватить слово
+        try:
+            if run.font and run.font.underline and not any(
+                    ch.isupper() for ch in t):
+                # берем короткую метку до 15 символов
+                w = t.strip()
+                if 0 < len(w) <= 15 and w not in tokens:
+                    tokens.append(w)
+        except Exception:
+            pass
+    # сортируем по длине (длиннее вперёд), чтобы не разбивать составные токены
+    tokens.sort(key=len, reverse=True)
+    return tokens
+
+
+def add_ru_mapped_line_with_highlights(doc, src_p, ru_text):
+    """Рисуем RU строку из словаря, но зеркалим подчёркнутые/ALL CAPS токены из EN, если они встречаются в RU.
+    Фон RU — тёмно-красный курсив; совпавшие токены — чёрный bold+underline (и без курсива).
+    """
+    p = doc.add_paragraph()
+    # открывающая скобка
+    r0 = p.add_run("(")
+    r0.font.italic = True
+    r0.font.color.rgb = DARK_RED
+
+    hi = collect_highlight_tokens(src_p)
+    s = ru_text or ""
+    i = 0
+    while i < len(s):
+        hit_pos = None
+        hit_tok = None
+        # ищем ближайшее вхождение любого токена
+        for tok in hi:
+            j = s.find(tok, i)
+            if j != -1 and (hit_pos is None or j < hit_pos):
+                hit_pos = j
+                hit_tok = tok
+        if hit_pos is None:
+            # хвост — обычный RU
+            r = p.add_run(s[i:])
+            r.font.italic = True
+            r.font.color.rgb = DARK_RED
+            break
+        # прелюдия до токена
+        if hit_pos > i:
+            r = p.add_run(s[i:hit_pos])
+            r.font.italic = True
+            r.font.color.rgb = DARK_RED
+        # сам токен — чёрный bold+underline
+        r2 = p.add_run(s[hit_pos:hit_pos + len(hit_tok)])
+        r2.font.color.rgb = BLACK
+        r2.font.bold = True
+        r2.font.underline = True
+        r2.font.italic = False
+        i = hit_pos + len(hit_tok)
+
+    # закрывающая скобка
+    rz = p.add_run(")")
+    rz.font.italic = True
+    rz.font.color.rgb = DARK_RED
+
+
 def append_th_to_vocab_line(dst_p):
     # Разбираем текущую строку, пытаемся получить EN термин
     full = dst_p.text
@@ -295,6 +466,28 @@ def append_th_to_vocab_line(dst_p):
 
 
 def build():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--with-ru", dest="with_ru", action="store_true",
+                        default=True)
+    parser.add_argument("--no-ru", dest="with_ru", action="store_false")
+    parser.add_argument("--with-th", dest="with_th", action="store_true",
+                        default=True)
+    parser.add_argument("--no-th", dest="with_th", action="store_false")
+    # Отдельные флаги для Vocabulary
+    parser.add_argument("--vocab-th", dest="vocab_th", action="store_true",
+                        default=True)
+    parser.add_argument("--no-vocab-th", dest="vocab_th", action="store_false")
+    parser.add_argument("--vocab-ru", dest="vocab_ru", action="store_true",
+                        default=False)
+    parser.add_argument("--no-vocab-ru", dest="vocab_ru", action="store_false")
+    parser.add_argument("--translations", type=str,
+                        default="lesson4_translations.json")
+    parser.add_argument("--translations-source", type=str,
+                        default="lesson4_translations_source.txt")
+    parser.add_argument("--no-fallback", dest="no_fallback",
+                        action="store_true", default=False,
+                        help="Не использовать авто-перевод при отсутствии пары в словаре")
+    args = parser.parse_args()
     start_ts = time.time()
     print("[lesson4] Start generation")
     src_path = os.path.join(os.getcwd(), SRC_NAME)
@@ -305,6 +498,16 @@ def build():
 
     out = new_doc()
     print("[lesson4] New document initialized")
+    # Грузим переводы (из source .txt приоритетнее, затем .json)
+    tr_map = {}
+    if args.translations_source and os.path.exists(args.translations_source):
+        tr_map = load_translations_from_source(args.translations_source)
+        print(
+            f"[lesson4] Translations loaded from: {args.translations_source} ({len(tr_map)} entries)")
+    if not tr_map and args.translations and os.path.exists(args.translations):
+        tr_map = load_translations_json(args.translations)
+        print(
+            f"[lesson4] Translations loaded from: {args.translations} ({len(tr_map)} entries)")
 
     # Простая машина состояний по секциям
     section = None
@@ -347,7 +550,14 @@ def build():
         if section == "vocab" and is_vocab_item(text):
             before = new_p.text
             # функция вернёт, добавляли ли RU/TH
-            ru_added, th_added = append_th_to_vocab_line(new_p)
+            ru_added = False
+            th_added = False
+            if args.vocab_th:
+                _, th_added = append_th_to_vocab_line(new_p)
+            # при необходимости можно добавить RU к словарю, пока по умолчанию выключено
+            if args.vocab_ru and not ru_added:
+                # RU обычно уже присутствует в лексике, поэтому здесь пропускаем
+                pass
             if ru_added:
                 vocab_ru_added += 1
             if th_added:
@@ -358,16 +568,28 @@ def build():
         stripped = text.strip()
         if not stripped:
             continue
-        # не добавляем перевод к явным заголовкам и меткам типа "Examples:"
-        if is_examples_label(text):
-            continue
-        # Для заголовков разделов не добавляем
-        if stripped.endswith(":") and len(stripped) < 64:
+        # Для заголовков разделов не добавляем (не переводим названия блоков)
+        if stripped in BLOCK_TITLES:
             continue
 
-        # Вставляем RU перевод под строкой
-        add_ru_line_for_en_paragraph(out, p)
-        ru_lines += 1
+        # Ищем переводы в словаре (приоритетнее авто-перевода). Применяем по флагам.
+        key = norm_exact(text)
+        has_any = False
+        if args.with_ru:
+            ru_txt = tr_map.get(key, {}).get("ru")
+            if ru_txt:
+                add_ru_mapped_line_with_highlights(out, p, ru_txt)
+                ru_lines += 1
+                has_any = True
+        if args.with_th:
+            th_txt = tr_map.get(key, {}).get("th")
+            if th_txt:
+                line_th(out, th_txt)
+                has_any = True
+        # Если ничего не нашли в словаре, но RU включён — фоллбек к авто-переводу с зеркалом подчёркивания
+        if not has_any and args.with_ru and not args.no_fallback:
+            add_ru_line_for_en_paragraph(out, p)
+            ru_lines += 1
 
         # прогресс каждые 20 параграфов
         if idx % 20 == 0:
