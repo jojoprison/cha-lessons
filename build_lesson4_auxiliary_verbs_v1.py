@@ -62,6 +62,30 @@ TH_VOCAB = {
     "had better": "ควรจะ...ดีกว่า",
 }
 
+# Тайский словарь для Word bank (School & Stationery)
+WORD_BANK_TH = {
+    "notebook": "สมุดโน้ต",
+    "textbook": "ตำราเรียน",
+    "workbook": "สมุดแบบฝึกหัด",
+    "binder": "แฟ้มสันห่วง",
+    "folder": "แฟ้ม",
+    "loose-leaf paper": "กระดาษแยกแผ่น",
+    "pen": "ปากกา",
+    "pencil": "ดินสอ",
+    "eraser": "ยางลบ",
+    "sharpener": "กบเหลาดินสอ",
+    "highlighter": "ปากกาเน้นข้อความ",
+    "marker": "ปากกาเมจิก",
+    "ruler": "ไม้บรรทัด",
+    "protractor": "ไม้โปรแทรกเตอร์",
+    "compass (geometry)": "วงเวียน",
+    "glue stick": "กาวแท่ง",
+    "scissors": "กรรไกร",
+    "stapler": "ที่เย็บกระดาษ",
+    "paper clips": "คลิปหนีบกระดาษ",
+    "sticky notes": "กระดาษโพสต์อิท",
+}
+
 # Базовый RU-словарь для Vocabulary
 RU_VOCAB = {
     "can": "может",
@@ -185,6 +209,17 @@ def norm_exact(s: str) -> str:
 
 def strip_list_markers(s: str) -> str:
     return re.sub(r"^[\u2022\-\u2013\u2014]\s+", "", (s or "").strip())
+
+
+def clean_vocab_en_term(s: str) -> str:
+    """Очищает EN-термин в Word bank: убирает литерную нумерацию (a.), эмодзи, оставляет латиницу/пробелы/скобки/дефис."""
+    s = (s or "").strip()
+    # убрать a./b./c.
+    s = re.sub(r"^[A-Za-z]\.[\s]+", "", s)
+    # убрать эмодзи и прочие символы, кроме латиницы, пробелов, дефиса и ()
+    s = re.sub(r"[^A-Za-z()\-\s]", "", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s.lower()
 
 
 BLOCK_TITLES = {
@@ -395,7 +430,11 @@ def append_th_to_vocab_line(dst_p):
     en_term = re.sub(r"^[A-Za-z]\.\s+", "", en_part).strip()
 
     # Подбор переводов
-    th = TH_VOCAB.get(normalize_key(en_term))
+    # Сначала пробуем word bank (stationery)
+    cleaned = clean_vocab_en_term(en_term)
+    th = WORD_BANK_TH.get(cleaned)
+    if not th:
+        th = TH_VOCAB.get(normalize_key(en_term))
     if not th:
         for k in list(TH_VOCAB.keys()):
             if normalize_key(k) == normalize_key(en_term):
@@ -421,6 +460,12 @@ def append_th_to_vocab_line(dst_p):
             tr.font.color.rgb = DARK_GREEN
             tr.font.name = THAI_FONT_NAME
             th_added = True
+        else:
+            # лог пропуска TH для словарной строки
+            try:
+                print(f"[lesson4][miss][Vocab TH] {cleaned or en_term}")
+            except Exception:
+                pass
         return ru_added, th_added
 
     # Если RU не было — добавляем RU и TH
@@ -441,6 +486,11 @@ def append_th_to_vocab_line(dst_p):
         tr.font.color.rgb = DARK_GREEN
         tr.font.name = THAI_FONT_NAME
         th_added = True
+    else:
+        try:
+            print(f"[lesson4][miss][Vocab TH] {cleaned or en_term}")
+        except Exception:
+            pass
     return ru_added, th_added
 
 
