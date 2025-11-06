@@ -264,9 +264,11 @@ BLOCK_TITLES = {
     "✏️ Lesson 4 — Auxiliary Verbs — Vocabulary: School & Stationery",
     "👩‍🏫 Explanation",
     "🧠 Practice",
+    "✍️ Examples:",
     "✏️ Vocabulary (School & Stationery)",
     "✏️ Vocabulary",
     "✏️ Vocabulary Exercises",
+    "🧾 Exit check (5 quick items):",
     "🧾 Exit check & Homework",
 }
 
@@ -406,6 +408,49 @@ def add_ru_mapped_line_with_highlights(doc, src_p, ru_text):
     rz.font.italic = True
     rz.font.color.rgb = DARK_RED
 
+
+def add_th_mapped_line_with_highlights(doc, src_p, th_text):
+    """TH строка с зеркалированием подчёркнутых/ALL CAPS токенов из EN.
+    База — зелёный курсив; совпавшие токены — чёрный bold+underline (без курсива).
+    """
+    p = doc.add_paragraph()
+    r0 = p.add_run("(")
+    r0.font.italic = True
+    r0.font.color.rgb = DARK_GREEN
+
+    hi = collect_highlight_tokens(src_p)
+    s = th_text or ""
+    i = 0
+    while i < len(s):
+        hit_pos = None
+        hit_tok = None
+        for tok in hi:
+            j = s.find(tok, i)
+            if j != -1 and (hit_pos is None or j < hit_pos):
+                hit_pos = j
+                hit_tok = tok
+        if hit_pos is None:
+            r = p.add_run(s[i:])
+            r.font.italic = True
+            r.font.color.rgb = DARK_GREEN
+            r.font.name = THAI_FONT_NAME
+            break
+        if hit_pos > i:
+            r = p.add_run(s[i:hit_pos])
+            r.font.italic = True
+            r.font.color.rgb = DARK_GREEN
+            r.font.name = THAI_FONT_NAME
+        r2 = p.add_run(s[hit_pos:hit_pos + len(hit_tok)])
+        r2.font.color.rgb = BLACK
+        r2.font.bold = True
+        r2.font.underline = True
+        r2.font.italic = False
+        r2.font.name = THAI_FONT_NAME
+        i = hit_pos + len(hit_tok)
+
+    rz = p.add_run(")")
+    rz.font.italic = True
+    rz.font.color.rgb = DARK_GREEN
 
 def append_th_to_vocab_line(dst_p):
     # Разбираем текущую строку, пытаемся получить EN термин
