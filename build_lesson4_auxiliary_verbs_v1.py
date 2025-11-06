@@ -336,7 +336,8 @@ def load_answers_from_source(path: str) -> dict:
             i += 1
             continue
         # ожидаем пары строк Answer/คำตอบ
-        if i + 2 <= len(lines) - 1 and lines[i + 1].lstrip().startswith("Answer:") and lines[i + 2].lstrip().startswith("คำตอบ:"):
+        if i + 2 <= len(lines) - 1 and lines[i + 1].lstrip().startswith(
+                "Answer:") and lines[i + 2].lstrip().startswith("คำตอบ:"):
             key = norm_exact(en)
             a_en = lines[i + 1].strip()
             a_th = lines[i + 2].strip()
@@ -558,9 +559,11 @@ def build():
                         default="lesson4_translations.json")
     parser.add_argument("--translations-source", type=str,
                         default="lesson4_translations_source.txt")
-    parser.add_argument("--with-answers", dest="with_answers", action="store_true", default=False,
+    parser.add_argument("--with-answers", dest="with_answers",
+                        action="store_true", default=False,
                         help="Вставлять ответы после строк заданий (фиолетовым), читаются из answers source")
-    parser.add_argument("--answers-source", type=str, default="lesson4_answers_source.txt",
+    parser.add_argument("--answers-source", type=str,
+                        default="lesson4_answers_source.txt",
                         help="Текстовый файл с ответами: EN line, затем 'Answer:' и 'คำตอบ:'")
     # (fallback авто-перевода удалён)
     args = parser.parse_args()
@@ -587,9 +590,11 @@ def build():
 
     # Грузим ответы (если включено)
     ans_map = {}
-    if args.with_answers and args.answers_source and os.path.exists(args.answers_source):
+    if args.with_answers and args.answers_source and os.path.exists(
+            args.answers_source):
         ans_map = load_answers_from_source(args.answers_source)
-        print(f"[lesson4] Answers loaded from: {args.answers_source} ({sum(len(v) for v in ans_map.values())} lines)")
+        print(
+            f"[lesson4] Answers loaded from: {args.answers_source} ({sum(len(v) for v in ans_map.values())} lines)")
 
     # Простая машина состояний по секциям
     section = None
