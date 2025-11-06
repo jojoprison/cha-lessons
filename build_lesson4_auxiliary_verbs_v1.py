@@ -1,21 +1,3 @@
-# Вспомогательные линии-переводы как в Cha
-def line_ru(doc, txt, size=11):
-    p = doc.add_paragraph()
-    r = p.add_run(f"({txt})")
-    r.font.italic = True
-    r.font.color.rgb = DARK_RED
-    r.font.size = Pt(size)
-
-
-def line_th(doc, txt, size=11):
-    p = doc.add_paragraph()
-    r = p.add_run(f"({txt})")
-    r.font.italic = True
-    r.font.color.rgb = DARK_GREEN
-    r.font.size = Pt(size)
-    r.font.name = THAI_FONT_NAME
-
-
 import argparse
 import json
 # -*- coding: utf-8 -*-
@@ -23,13 +5,11 @@ import json
 # Генерит DOCX: cha_lesson_4_auxiliary_verbs_v1.docx на основе cha_lesson_4_auxiliary_verbs_lite_v3.docx
 # Требования:
 # - Добавить RU строку после каждой EN строки в Explanation / Practice / Vocabulary Exercises / Exit check & Homework
-#   (тёмно-красный курсив), а подчёркнутые фрагменты и капс из EN — отзеркалить в RU (чёрный, bold+underline, CAPS).
 # - В Vocabulary после RU добавить « — TH» перевод модальных/вспомогательных.
 import os
 import re
 import time
 
-from deep_translator import GoogleTranslator
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
@@ -116,22 +96,8 @@ RU_VOCAB = {
     "had better": "лучше бы/следует",
 }
 
-# Простейший «переводчик» на RU (черновой): токен-замены для базовых слов. Остальное оставляем как есть.
-RU_TOKEN_MAP = {
-    "i": "я", "you": "ты", "we": "мы", "they": "они", "he": "он", "she": "она",
-    "it": "это",
-    "can": "может", "could": "мог(ла)/могли", "may": "может",
-    "might": "возможно", "must": "должен",
-    "have": "имеем/имеет/имею", "has": "имеет", "had": "имел/имели", "to": "",
-    "be": "быть",
-    "am": "есть", "is": "есть", "are": "есть", "was": "был", "were": "были",
-    "will": "будет", "shall": "будет", "would": "бы", "should": "следует",
-    "do": "делать", "does": "делает", "did": "сделал",
-    "not": "не", "no": "нет", "yes": "да", "and": "и", "or": "или", "but": "но",
-}
 
-# Инициализируем переводчик: auto -> ru
-TRANSLATOR = GoogleTranslator(source='auto', target='ru')
+# (автоперевод удалён; переводы берём только из источника)
 
 
 def new_doc():
@@ -180,64 +146,10 @@ def clone_paragraph(dst_doc, src_p):
     return p
 
 
-def translate_ru(text: str) -> str:
-    if not text:
-        return ""
-    try:
-        return TRANSLATOR.translate(text)
-    except Exception:
-        # Фоллбек — вернуть исходный текст (чтобы не падать)
-        return text
+# (удалены функции автоперевода; используем только заранее заданные переводы)
 
 
-def add_ru_line_for_en_paragraph(dst_doc, src_p):
-    """
-    Переводим каждый EN-run целиком на русский и собираем RU строку из таких фрагментов,
-    зеркалим подчёркнутые участки (чёрный bold+underline) и CAPS.
-    """
-    p = dst_doc.add_paragraph()
-    # открывающая скобка (красный курсив)
-    r0 = p.add_run("(")
-    r0.font.italic = True
-    r0.font.color.rgb = DARK_RED
-    for run in src_p.runs:
-        src_text = run.text
-        if not src_text:
-            continue
-        ru_piece = translate_ru(src_text)
-        # CAPS зеркалим
-        if src_text.isupper():
-            ru_piece = ru_piece.upper()
-        r = p.add_run(ru_piece)
-        # базово RU — тёмно-красный курсив
-        r.font.italic = True
-        r.font.color.rgb = DARK_RED
-        # зеркалим подчёркивание (делаем чёрным, bold+underline)
-        try:
-            if run.font and run.font.underline:
-                r.font.color.rgb = BLACK
-                r.font.bold = True
-                r.font.underline = True
-                r.font.italic = False
-        except Exception:
-            pass
-    # закрывающая скобка
-    rZ = p.add_run(")")
-    rZ.font.italic = True
-    rZ.font.color.rgb = DARK_RED
-
-
-def is_section_title(text: str) -> bool:
-    if not text:
-        return False
-    t = text.strip()
-    # Заголовки в уроках часто содержат эмодзи или оканчиваются на ':' как в "✍️ Examples:"
-    return bool(t and (t.endswith(":") or t.startswith("#") or (
-            len(t) <= 64 and any(ch for ch in t if ord(ch) > 1000))))
-
-
-def is_examples_label(text: str) -> bool:
-    return text.strip().endswith("Examples:")
+# (удалены неиспользуемые эвристики заголовков)
 
 
 def is_vocab_item(text: str) -> bool:
@@ -534,9 +446,7 @@ def build():
                         default="lesson4_translations.json")
     parser.add_argument("--translations-source", type=str,
                         default="lesson4_translations_source.txt")
-    parser.add_argument("--no-fallback", dest="no_fallback",
-                        action="store_true", default=False,
-                        help="Не использовать авто-перевод при отсутствии пары в словаре")
+    # (fallback авто-перевода удалён)
     args = parser.parse_args()
     start_ts = time.time()
     print("[lesson4] Start generation")
@@ -636,10 +546,7 @@ def build():
             if th_txt:
                 add_th_mapped_line_with_highlights(out, p, th_txt)
                 has_any = True
-        # Если ничего не нашли в словаре, но RU включён — фоллбек к авто-переводу с зеркалом подчёркивания
-        if not has_any and args.with_ru and not args.no_fallback:
-            add_ru_line_for_en_paragraph(out, p)
-            ru_lines += 1
+        # Перевод добавляется только если есть в словаре; авто-перевод отключён
 
         # прогресс каждые 20 параграфов
         if idx % 20 == 0:
