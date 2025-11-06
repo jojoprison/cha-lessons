@@ -170,10 +170,21 @@ def normalize_key(s: str) -> str:
 def norm_exact(s: str) -> str:
     # Нормализация ключей для словаря переводов (без нижнего регистра)
     s = (s or "").strip()
+    # Унификация тире/дефисов и неразрывных дефисов
+    s = s.replace("\u2011", "-")  # non-breaking hyphen
+    s = s.replace("\u2013", "-")  # en dash
+    s = s.replace("\u2014", "-")  # em dash
+    s = s.replace("\u2212", "-")  # minus sign
     # Срезаем ведущую нумерацию вида 1)  1.  1.1  и т.п.
     s = re.sub(r"^\s*\d+(?:\.\d+)*[\)\.]?\s+", "", s)
+    # Срезаем лидирующие маркеры списков (•, -, –, —) и пробелы
+    s = re.sub(r"^[\u2022\-\u2013\u2014]\s+", "", s)
     # Упрощаем пробелы
     return re.sub(r"\s+", " ", s)
+
+
+def strip_list_markers(s: str) -> str:
+    return re.sub(r"^[\u2022\-\u2013\u2014]\s+", "", (s or "").strip())
 
 
 BLOCK_TITLES = {
@@ -246,7 +257,13 @@ def load_translations_from_source(path: str) -> dict:
                 if th.startswith("(") and th.endswith(")"):
                     th = th[1:-1]
             if ru or th:
-                tr[norm_exact(L)] = {"ru": ru, "th": th}
+                base_key = norm_exact(L)
+                val = {"ru": ru, "th": th}
+                tr[base_key] = val
+                # альтернативный ключ без маркеров списков
+                alt = norm_exact(strip_list_markers(L))
+                if alt != base_key:
+                    tr[alt] = val
                 i += 3
                 continue
         i += 1
@@ -541,11 +558,16 @@ def build():
                 add_ru_mapped_line_with_highlights(out, p, ru_txt)
                 ru_lines += 1
                 has_any = True
+            else:
+                # короткий лог по пропускам RU
+                print(f"[lesson4][miss][RU] {key[:80]}")
         if args.with_th:
             th_txt = tr_map.get(key, {}).get("th")
             if th_txt:
                 add_th_mapped_line_with_highlights(out, p, th_txt)
                 has_any = True
+            else:
+                print(f"[lesson4][miss][TH] {key[:80]}")
         # Перевод добавляется только если есть в словаре; авто-перевод отключён
 
         # прогресс каждые 20 параграфов
