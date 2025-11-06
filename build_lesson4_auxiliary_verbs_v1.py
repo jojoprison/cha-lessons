@@ -257,7 +257,11 @@ def normalize_key(s: str) -> str:
 
 def norm_exact(s: str) -> str:
     # Нормализация ключей для словаря переводов (без нижнего регистра)
-    return re.sub(r"\s+", " ", (s or "").strip())
+    s = (s or "").strip()
+    # Срезаем ведущую нумерацию вида 1)  1.  1.1  и т.п.
+    s = re.sub(r"^\s*\d+(?:\.\d+)*[\)\.]?\s+", "", s)
+    # Упрощаем пробелы
+    return re.sub(r"\s+", " ", s)
 
 
 BLOCK_TITLES = {
@@ -452,6 +456,7 @@ def add_th_mapped_line_with_highlights(doc, src_p, th_text):
     rz.font.italic = True
     rz.font.color.rgb = DARK_GREEN
 
+
 def append_th_to_vocab_line(dst_p):
     # Разбираем текущую строку, пытаемся получить EN термин
     full = dst_p.text
@@ -629,7 +634,7 @@ def build():
         if args.with_th:
             th_txt = tr_map.get(key, {}).get("th")
             if th_txt:
-                line_th(out, th_txt)
+                add_th_mapped_line_with_highlights(out, p, th_txt)
                 has_any = True
         # Если ничего не нашли в словаре, но RU включён — фоллбек к авто-переводу с зеркалом подчёркивания
         if not has_any and args.with_ru and not args.no_fallback:
