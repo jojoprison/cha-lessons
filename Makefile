@@ -1,4 +1,4 @@
-.PHONY: help ru th full deps
+.PHONY: help ru th full answers deps
 
 UV ?= uv
 SCRIPT := build_lesson4_auxiliary_verbs_v1.py
@@ -9,6 +9,7 @@ help:
 	@echo "  make ru    # Генерация только RU (контент: RU; словарь без TH)"
 	@echo "  make th    # Генерация только TH (контент: TH; словарь с TH)"
 	@echo "  make full  # Генерация RU+TH (контент RU+TH; словарь с TH)"
+	@echo "  make answers  # Генерация TH контента + TH словарь + ответы (фиолетовым)"
 	@echo "  make deps  # Установка/синхронизация зависимостей (python-docx)"
 
 deps:
@@ -34,3 +35,11 @@ full:
 	  --with-ru --with-th \
 	  --vocab-th --no-vocab-ru
 	@echo "[make] FULL build finished"
+
+answers:
+	$(UV) run python $(SCRIPT) \
+	  --translations-source $(TRS) \
+	  --no-ru --with-th \
+	  --vocab-th --no-vocab-ru \
+	  --with-answers
+	@echo "[make] ANSWERS (TH+vocab TH+answers) build finished"
