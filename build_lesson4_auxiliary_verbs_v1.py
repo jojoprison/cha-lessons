@@ -214,6 +214,11 @@ def strip_list_markers(s: str) -> str:
 def clean_vocab_en_term(s: str) -> str:
     """Очищает EN-термин в Word bank: убирает литерную нумерацию (a.), эмодзи, оставляет латиницу/пробелы/скобки/дефис."""
     s = (s or "").strip()
+    # нормализуем различные дефисы/тире к ASCII '-'
+    s = s.replace("\u2011", "-")  # non-breaking hyphen
+    s = s.replace("\u2013", "-")  # en dash
+    s = s.replace("\u2014", "-")  # em dash
+    s = s.replace("\u2212", "-")  # minus sign
     # убрать a./b./c.
     s = re.sub(r"^[A-Za-z]\.[\s]+", "", s)
     # убрать эмодзи и прочие символы, кроме латиницы, пробелов, дефиса и ()
