@@ -222,6 +222,9 @@ def load_translations_from_source(path: str) -> dict:
         lines = [ln.rstrip("\n") for ln in f]
     tr = {}
     section = None
+    # защита от дублей: по индексу исходного параграфа
+    added_ru_idx = set()
+    added_th_idx = set()
     i = 0
     while i < len(lines):
         L = lines[i].strip()
@@ -385,7 +388,6 @@ def build():
     total = len(src.paragraphs)
     for idx, p in enumerate(src.paragraphs, 1):
         text = p.text or ""
-        new_p = clone_paragraph(out, p)
 
         t = text.strip().lower()
         if "vocabulary (student graduation)" in t:
@@ -403,11 +405,17 @@ def build():
         if not stripped:
             continue
         if stripped in BLOCK_TITLES:
+            # Заголовки переносим как есть
+            clone_paragraph(out, p)
             continue
 
         # Если текущий абзац уже является переводной строкой в скобках — не добавляем ничего
         if stripped.startswith("(") and stripped.endswith(")"):
+            # Не переносим исходные переводные строки из базы — мы генерим свои
             continue
+
+        # На этом этапе переносим сам EN-абзац в выход
+        new_p = clone_paragraph(out, p)
 
         # Word bank: дописываем RU/TH в ту же строку
         if section == "vocab" and re.match(r"^[A-Za-z]\.[\s]+", stripped):
@@ -450,29 +458,16 @@ def build():
         # Контентные строки: добавляем переводы
         key = norm_exact(text)
 
-        # Проверяем, есть ли уже RU/TH в исходном документе сразу после текущей строки (до 2 следующих абзацев)
-        has_src_ru = False
-        has_src_th = False
-        for look_ahead in (0, 1):
-            j = (idx - 1) + 1 + look_ahead
-            if 0 <= j < len(src.paragraphs):
-                s = (src.paragraphs[j].text or "").strip()
-                if s.startswith("(") and s.endswith(")"):
-                    val = s[1:-1]
-                    if re.search(r"[\u0400-\u04FF]", val):
-                        has_src_ru = True
-                    if re.search(r"[\u0E00-\u0E7F]", val):
-                        has_src_th = True
-
         # Для блока Exit check — особый формат: метки "— RU:" / "— TH:" вместо строк в скобках
         if section == "exit":
-            if args.with_ru and not has_src_ru:
+            if args.with_ru and idx not in added_ru_idx:
                 ru_txt = tr_map.get(key, {}).get("ru")
                 if ru_txt:
                     pr = out.add_paragraph()
                     rr = pr.add_run(f"— RU: {ru_txt}")
                     # стандартный стиль (чёрный, без курсива)
-            if args.with_th and not has_src_th:
+                    added_ru_idx.add(idx)
+            if args.with_th and idx not in added_th_idx:
                 th_txt = tr_map.get(key, {}).get("th")
                 if th_txt:
                     pt = out.add_paragraph()
@@ -481,16 +476,19 @@ def build():
                         rt.font.name = THAI_FONT_NAME
                     except Exception:
                         pass
+                    added_th_idx.add(idx)
         else:
             # Остальные секции — как в уроке 4 (строки в скобках с зеркалированием)
-            if args.with_ru and not has_src_ru:
+            if args.with_ru and idx not in added_ru_idx:
                 ru_txt = tr_map.get(key, {}).get("ru")
                 if ru_txt:
                     add_ru_mapped_line_with_highlights(out, p, ru_txt)
-            if args.with_th and not has_src_th:
+                    added_ru_idx.add(idx)
+            if args.with_th and idx not in added_th_idx:
                 th_txt = tr_map.get(key, {}).get("th")
                 if th_txt:
                     add_th_mapped_line_with_highlights(out, p, th_txt)
+                    added_th_idx.add(idx)
 
         # Ответы — строго после переводов
         if args.with_answers and section in ("practice", "vocab_ex", "exit"):
