@@ -222,9 +222,6 @@ def load_translations_from_source(path: str) -> dict:
         lines = [ln.rstrip("\n") for ln in f]
     tr = {}
     section = None
-    # защита от дублей: по индексу исходного параграфа
-    added_ru_idx = set()
-    added_th_idx = set()
     i = 0
     while i < len(lines):
         L = lines[i].strip()
@@ -367,17 +364,14 @@ def build():
     # Проверки
     if not os.path.exists(SRC_NAME):
         raise FileNotFoundError(f"Source DOCX not found: {SRC_NAME}")
-    if not args.translations_source or not os.path.exists(
-            args.translations_source):
-        raise FileNotFoundError(
-            f"Translations source not found: {args.translations_source}")
+    if not args.translations_source or not os.path.exists(args.translations_source):
+        raise FileNotFoundError(f"Translations source not found: {args.translations_source}")
 
     # Грузим маппинги
     tr_map = load_translations_from_source(args.translations_source)
     wb_map = load_wordbank_from_source(args.translations_source)
     ans_map = {}
-    if args.with_answers and args.answers_source and os.path.exists(
-            args.answers_source):
+    if args.with_answers and args.answers_source and os.path.exists(args.answers_source):
         ans_map = load_answers_from_source(args.answers_source)
 
     # База и выходной документ
@@ -385,10 +379,15 @@ def build():
     out = new_doc()
 
     section = None
+    # защита от дублей: по индексу исходного параграфа
+    added_ru_idx = set()
+    added_th_idx = set()
+    # режим только RU без EN
+    ru_only_mode = bool(args.with_ru and not args.with_th)
+
     total = len(src.paragraphs)
     for idx, p in enumerate(src.paragraphs, 1):
         text = p.text or ""
-
         t = text.strip().lower()
         if "vocabulary (student graduation)" in t:
             section = "vocab"
@@ -405,27 +404,20 @@ def build():
         if not stripped:
             continue
         if stripped in BLOCK_TITLES:
-            # Заголовки переносим как есть
-            clone_paragraph(out, p)
+            if not ru_only_mode:
+                clone_paragraph(out, p)
             continue
-
-        # Если текущий абзац уже является переводной строкой в скобках — не добавляем ничего
         if stripped.startswith("(") and stripped.endswith(")"):
-            # Не переносим исходные переводные строки из базы — мы генерим свои
             continue
 
-        # На этом этапе переносим сам EN-абзац в выход
-        new_p = clone_paragraph(out, p)
-
-        # Word bank: дописываем RU/TH в ту же строку
-        if section == "vocab" and re.match(r"^[A-Za-z]\.[\s]+", stripped):
-            # получить ключи поиска
+        # Word bank
+        if section == "vocab" and re.match(r"^[A-Za-z]\.\s+", stripped):
             left = stripped.split(" — ", 1)[0]
             keys = [
                 norm_exact(left),
-                norm_exact(re.sub(r"^[A-Za-z]\.[\s]+", "", left)),
+                norm_exact(re.sub(r"^[A-Za-z]\.\s+", "", left)),
                 clean_vocab_en_term(left),
-                clean_vocab_en_term(re.sub(r"^[A-Za-z]\.[\s]+", "", left)),
+                clean_vocab_en_term(re.sub(r"^[A-Za-z]\.\s+", "", left)),
             ]
             val = None
             for k in keys:
@@ -438,31 +430,41 @@ def build():
             if val:
                 ru = val.get("ru")
                 th = val.get("th")
-                if args.with_ru and ru:
-                    rr_sep = new_p.add_run(" — ")
-                    rr_sep.font.italic = True
-                    rr_sep.font.color.rgb = DARK_RED
-                    rr_run = new_p.add_run(ru)
-                    rr_run.font.italic = True
-                    rr_run.font.color.rgb = DARK_RED
-                if args.with_th and th:
-                    th_sep = new_p.add_run(" — ")
-                    th_sep.font.italic = True
-                    th_sep.font.color.rgb = DARK_GREEN
-                    trun = new_p.add_run(th)
-                    trun.font.italic = True
-                    trun.font.color.rgb = DARK_GREEN
-                    trun.font.name = THAI_FONT_NAME
+                if ru_only_mode:
+                    m = re.match(r"^([A-Za-z]\.\s+[\W_]*\s*)", left)
+                    label = m.group(1) if m else ""
+                    out_line = f"{label}{ru}" if (args.with_ru and ru) else label.rstrip()
+                    out.add_paragraph(out_line)
+                else:
+                    new_p = clone_paragraph(out, p)
+                    if args.with_ru and ru:
+                        rr_sep = new_p.add_run(" — ")
+                        rr_sep.font.italic = True
+                        rr_sep.font.color.rgb = DARK_RED
+                        rr_run = new_p.add_run(ru)
+                        rr_run.font.italic = True
+                        rr_run.font.color.rgb = DARK_RED
+                    if args.with_th and th:
+                        th_sep = new_p.add_run(" — ")
+                        th_sep.font.italic = True
+                        th_sep.font.color.rgb = DARK_GREEN
+                        trun = new_p.add_run(th)
+                        trun.font.italic = True
+                        trun.font.color.rgb = DARK_GREEN
+                        trun.font.name = THAI_FONT_NAME
             continue
 
-        # Контентные строки: добавляем переводы
-        key = norm_exact(text)
+        # Content EN (clone only if not ru-only)
+        if not ru_only_mode:
+            clone_paragraph(out, p)
 
-        # Для блока Exit check — особый формат: метки "— RU:" / "— TH:" вместо строк в скобках
+        # Translations
+        key = norm_exact(text)
         if section == "exit":
             if args.with_ru and idx not in added_ru_idx:
                 ru_txt = tr_map.get(key, {}).get("ru")
                 if ru_txt:
+                    # В ru-only режиме у нас нет EN; просто добавим строку с меткой
                     pr = out.add_paragraph()
                     rr = pr.add_run(f"— RU: {ru_txt}")
                     # стандартный стиль (чёрный, без курсива)
@@ -482,6 +484,7 @@ def build():
             if args.with_ru and idx not in added_ru_idx:
                 ru_txt = tr_map.get(key, {}).get("ru")
                 if ru_txt:
+                    # В ru-only режиме просто добавляем RU строку (скобки/красный курсив), без EN
                     add_ru_mapped_line_with_highlights(out, p, ru_txt)
                     added_ru_idx.add(idx)
             if args.with_th and idx not in added_th_idx:
