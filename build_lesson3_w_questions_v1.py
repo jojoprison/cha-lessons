@@ -253,7 +253,7 @@ def load_translations_from_source(path: str) -> dict:
             while j < len(lines) and lines[j].strip().startswith("("):
                 raw = lines[j].strip()
                 val = raw[1:-1] if (
-                            raw.startswith("(") and raw.endswith(")")) else raw
+                        raw.startswith("(") and raw.endswith(")")) else raw
                 # Классификация по символам (тайский / кириллица)
                 if re.search(r"[\u0E00-\u0E7F]", val):  # Thai block
                     th = val  # берём последнее встреченное TH
@@ -447,7 +447,7 @@ def build():
                     trun.font.name = THAI_FONT_NAME
             continue
 
-        # Контентные строки: добавляем RU/TH из словаря с зеркалированием подчёркиваний/ALL CAPS
+        # Контентные строки: добавляем переводы
         key = norm_exact(text)
 
         # Проверяем, есть ли уже RU/TH в исходном документе сразу после текущей строки (до 2 следующих абзацев)
@@ -464,14 +464,33 @@ def build():
                     if re.search(r"[\u0E00-\u0E7F]", val):
                         has_src_th = True
 
-        if args.with_ru and not has_src_ru:
-            ru_txt = tr_map.get(key, {}).get("ru")
-            if ru_txt:
-                add_ru_mapped_line_with_highlights(out, p, ru_txt)
-        if args.with_th and not has_src_th:
-            th_txt = tr_map.get(key, {}).get("th")
-            if th_txt:
-                add_th_mapped_line_with_highlights(out, p, th_txt)
+        # Для блока Exit check — особый формат: метки "— RU:" / "— TH:" вместо строк в скобках
+        if section == "exit":
+            if args.with_ru and not has_src_ru:
+                ru_txt = tr_map.get(key, {}).get("ru")
+                if ru_txt:
+                    pr = out.add_paragraph()
+                    rr = pr.add_run(f"— RU: {ru_txt}")
+                    # стандартный стиль (чёрный, без курсива)
+            if args.with_th and not has_src_th:
+                th_txt = tr_map.get(key, {}).get("th")
+                if th_txt:
+                    pt = out.add_paragraph()
+                    rt = pt.add_run(f"— TH: {th_txt}")
+                    try:
+                        rt.font.name = THAI_FONT_NAME
+                    except Exception:
+                        pass
+        else:
+            # Остальные секции — как в уроке 4 (строки в скобках с зеркалированием)
+            if args.with_ru and not has_src_ru:
+                ru_txt = tr_map.get(key, {}).get("ru")
+                if ru_txt:
+                    add_ru_mapped_line_with_highlights(out, p, ru_txt)
+            if args.with_th and not has_src_th:
+                th_txt = tr_map.get(key, {}).get("th")
+                if th_txt:
+                    add_th_mapped_line_with_highlights(out, p, th_txt)
 
         # Ответы — строго после переводов
         if args.with_answers and section in ("practice", "vocab_ex", "exit"):
