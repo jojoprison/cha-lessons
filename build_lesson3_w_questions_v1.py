@@ -16,6 +16,7 @@ PURPLE = RGBColor(102, 0, 153)
 THAI_FONT_NAME = "Noto Sans Thai"
 
 OUT_NAME = "cha_lesson_3_w_questions_v1.docx"
+SRC_NAME = "cha_lesson_3_w-questions_v8.docx"
 
 BLOCK_TITLES = {
     "🎓 Lesson 3 — W-Questions — Vocabulary: Student Graduation",
@@ -51,6 +52,29 @@ def new_doc():
     return doc
 
 
+def clone_run(dst_p, src_run):
+    r = dst_p.add_run(src_run.text)
+    try:
+        r.font.bold = src_run.font.bold
+        r.font.italic = src_run.font.italic
+        r.font.underline = src_run.font.underline
+        r.font.size = src_run.font.size
+        r.font.all_caps = src_run.font.all_caps
+        if src_run.font.color and src_run.font.color.rgb:
+            r.font.color.rgb = src_run.font.color.rgb
+    except Exception:
+        pass
+    return r
+
+
+def clone_paragraph(dst_doc: Document, src_p):
+    p = dst_doc.add_paragraph()
+    p.alignment = src_p.alignment
+    for run in src_p.runs:
+        clone_run(p, run)
+    return p
+
+
 def line_ru(doc: Document, txt: str, size=11):
     p = doc.add_paragraph()
     r = p.add_run(f"({txt})")
@@ -68,6 +92,101 @@ def line_th(doc: Document, txt: str, size=11):
     r.font.name = THAI_FONT_NAME
 
 
+def collect_highlight_tokens(src_p) -> list:
+    tokens = []
+    for run in src_p.runs:
+        t = run.text or ""
+        for m in re.finditer(r"[A-Z][A-Z ]+[A-Z]", t):
+            tok = m.group(0).strip()
+            if tok not in tokens:
+                tokens.append(tok)
+        try:
+            if run.font and run.font.underline and not any(
+                    ch.isupper() for ch in t):
+                w = (t or "").strip()
+                if 0 < len(w) <= 15 and w not in tokens:
+                    tokens.append(w)
+        except Exception:
+            pass
+    tokens.sort(key=len, reverse=True)
+    return tokens
+
+
+def add_ru_mapped_line_with_highlights(doc: Document, src_p, ru_text: str):
+    p = doc.add_paragraph()
+    r0 = p.add_run("(")
+    r0.font.italic = True
+    r0.font.color.rgb = DARK_RED
+    hi = collect_highlight_tokens(src_p)
+    s = ru_text or ""
+    i = 0
+    while i < len(s):
+        hit_pos = None
+        hit_tok = None
+        for tok in hi:
+            j = s.find(tok, i)
+            if j != -1 and (hit_pos is None or j < hit_pos):
+                hit_pos = j
+                hit_tok = tok
+        if hit_pos is None:
+            r = p.add_run(s[i:])
+            r.font.italic = True
+            r.font.color.rgb = DARK_RED
+            break
+        if hit_pos > i:
+            r = p.add_run(s[i:hit_pos])
+            r.font.italic = True
+            r.font.color.rgb = DARK_RED
+        r2 = p.add_run(s[hit_pos:hit_pos + len(hit_tok)])
+        r2.font.color.rgb = BLACK
+        r2.font.bold = True
+        r2.font.underline = True
+        r2.font.italic = False
+        i = hit_pos + len(hit_tok)
+    rz = p.add_run(")")
+    rz.font.italic = True
+    rz.font.color.rgb = DARK_RED
+
+
+def add_th_mapped_line_with_highlights(doc: Document, src_p, th_text: str):
+    p = doc.add_paragraph()
+    r0 = p.add_run("(")
+    r0.font.italic = True
+    r0.font.color.rgb = DARK_GREEN
+    hi = collect_highlight_tokens(src_p)
+    s = th_text or ""
+    i = 0
+    while i < len(s):
+        hit_pos = None
+        hit_tok = None
+        for tok in hi:
+            j = s.find(tok, i)
+            if j != -1 and (hit_pos is None or j < hit_pos):
+                hit_pos = j
+                hit_tok = tok
+        if hit_pos is None:
+            r = p.add_run(s[i:])
+            r.font.italic = True
+            r.font.color.rgb = DARK_GREEN
+            r.font.name = THAI_FONT_NAME
+            break
+        if hit_pos > i:
+            r = p.add_run(s[i:hit_pos])
+            r.font.italic = True
+            r.font.color.rgb = DARK_GREEN
+            r.font.name = THAI_FONT_NAME
+        r2 = p.add_run(s[hit_pos:hit_pos + len(hit_tok)])
+        r2.font.color.rgb = BLACK
+        r2.font.bold = True
+        r2.font.underline = True
+        r2.font.italic = False
+        r2.font.name = THAI_FONT_NAME
+        i = hit_pos + len(hit_tok)
+    rz = p.add_run(")")
+    rz.font.italic = True
+    rz.font.color.rgb = DARK_GREEN
+
+
 def norm_exact(s: str) -> str:
     s = (s or "").strip()
     s = s.replace("\u2011", "-")
@@ -77,6 +196,124 @@ def norm_exact(s: str) -> str:
     s = re.sub(r"^\s*\d+(?:\.\d+)*[\)\.]?\s+", "", s)
     s = re.sub(r"^[\u2022\-\u2013\u2014]\s+", "", s)
     return re.sub(r"\s+", " ", s)
+
+
+def strip_list_markers(s: str) -> str:
+    return re.sub(r"^[\u2022\-\u2013\u2014]\s+", "", (s or "").strip())
+
+
+def clean_vocab_en_term(s: str) -> str:
+    """Очищает EN-термин Word bank: убирает литерную нумерацию (a.), эмодзи; оставляет латиницу/пробелы/дефис/скобки."""
+    s = (s or "").strip()
+    s = s.replace("\u2011", "-").replace("\u2013", "-").replace("\u2014",
+                                                                "-").replace(
+        "\u2212", "-")
+    s = re.sub(r"^[A-Za-z]\.[\s]+", "", s)
+    s = re.sub(r"[^A-Za-z()\-\s]", "", s)
+    s = re.sub(r"\s+", " ", s).strip().lower()
+    return s
+
+
+def load_translations_from_source(path: str) -> dict:
+    """Парсит файл перевода: EN строка + (RU) + (TH) как отдельные строки. Пропускает блок Word bank."""
+    if not path or not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        lines = [ln.rstrip("\n") for ln in f]
+    tr = {}
+    section = None
+    i = 0
+    while i < len(lines):
+        L = lines[i].strip()
+        if not L:
+            i += 1
+            continue
+        low = L.lower()
+        if L in BLOCK_TITLES:
+            if "vocabulary (student graduation)" in low:
+                section = "vocab"
+            elif "vocabulary exercises" in low:
+                section = "vocab_ex"
+            elif "practice" in low:
+                section = "practice"
+            elif "exit check" in low or "homework" in low:
+                section = "exit"
+            elif "explanation" in low:
+                section = "expl"
+            i += 1
+            continue
+        # пропускаем word bank — там перевод в одну строку
+        if section == "vocab":
+            i += 1
+            continue
+        if not L.startswith("("):
+            # Собираем до нескольких следующих строк в скобках и классифицируем язык по алфавиту
+            ru = th = None
+            j = i + 1
+            while j < len(lines) and lines[j].strip().startswith("("):
+                raw = lines[j].strip()
+                val = raw[1:-1] if (
+                            raw.startswith("(") and raw.endswith(")")) else raw
+                # Классификация по символам (тайский / кириллица)
+                if re.search(r"[\u0E00-\u0E7F]", val):  # Thai block
+                    th = val  # берём последнее встреченное TH
+                elif re.search(r"[\u0400-\u04FF]", val):  # Cyrillic
+                    ru = val  # берём последнее встреченное RU
+                else:
+                    # если не удалось классифицировать — не учитываем
+                    pass
+                j += 1
+            if ru or th:
+                base_key = norm_exact(L)
+                pair = {"ru": ru, "th": th}
+                tr[base_key] = pair
+                alt = norm_exact(strip_list_markers(L))
+                if alt != base_key:
+                    tr[alt] = pair
+                i = j
+                continue
+        i += 1
+    return tr
+
+
+def load_wordbank_from_source(path: str) -> dict:
+    """Парсит блок Word bank из текстового источника. Возвращает dict по ключу EN-термина -> {ru, th}."""
+    if not path or not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        lines = [ln.rstrip("\n") for ln in f]
+    wb = {}
+    section = None
+    for L in lines:
+        S = L.strip()
+        if not S:
+            continue
+        low = S.lower()
+        if S in BLOCK_TITLES:
+            if "vocabulary (student graduation)" in low:
+                section = "vocab"
+            else:
+                section = None
+            continue
+        if section != "vocab":
+            continue
+        # ожидаем формат: a. <emoji?> EN — RU — TH
+        if re.match(r"^[A-Za-z]\.", S) and " — " in S:
+            parts = re.split(r"\s—\s", S, maxsplit=2)
+            if len(parts) >= 2:
+                left = parts[0]
+                ru = parts[1] if len(parts) >= 2 else None
+                th = parts[2] if len(parts) >= 3 else None
+                # ключи
+                keys = set()
+                keys.add(norm_exact(left))
+                keys.add(norm_exact(re.sub(r"^[A-Za-z]\.[\s]+", "", left)))
+                cv = clean_vocab_en_term(left)
+                if cv:
+                    keys.add(cv)
+                for k in keys:
+                    wb[k] = {"ru": ru, "th": th}
+    return wb
 
 
 def load_answers_from_source(path: str) -> dict:
@@ -124,110 +361,128 @@ def build():
                         default="lesson3_answers_source.txt")
     args = parser.parse_args()
 
+    # Проверки
+    if not os.path.exists(SRC_NAME):
+        raise FileNotFoundError(f"Source DOCX not found: {SRC_NAME}")
     if not args.translations_source or not os.path.exists(
             args.translations_source):
         raise FileNotFoundError(
             f"Translations source not found: {args.translations_source}")
 
+    # Грузим маппинги
+    tr_map = load_translations_from_source(args.translations_source)
+    wb_map = load_wordbank_from_source(args.translations_source)
     ans_map = {}
     if args.with_answers and args.answers_source and os.path.exists(
             args.answers_source):
         ans_map = load_answers_from_source(args.answers_source)
 
-    with open(args.translations_source, "r", encoding="utf-8") as f:
-        lines = [ln.rstrip("\n") for ln in f]
+    # База и выходной документ
+    src = Document(SRC_NAME)
+    out = new_doc()
 
-    doc = new_doc()
-
-    i = 0
-    total = len(lines)
     section = None
+    total = len(src.paragraphs)
+    for idx, p in enumerate(src.paragraphs, 1):
+        text = p.text or ""
+        new_p = clone_paragraph(out, p)
 
-    while i < total:
-        L = lines[i].rstrip("\n")
-        if not L.strip():
-            i += 1
+        t = text.strip().lower()
+        if "vocabulary (student graduation)" in t:
+            section = "vocab"
+        elif "vocabulary exercises" in t:
+            section = "vocab_ex"
+        elif "practice" in t:
+            section = "practice"
+        elif "exit check" in t or "homework" in t:
+            section = "exit"
+        elif "explanation" in t or "examples" in t:
+            section = "expl"
+
+        stripped = text.strip()
+        if not stripped:
+            continue
+        if stripped in BLOCK_TITLES:
             continue
 
-        # секции
-        low = L.lower().strip()
-        if L in BLOCK_TITLES:
-            if "explanation" in low:
-                section = "expl"
-            elif "practice" in low:
-                section = "practice"
-            elif "vocabulary (student graduation)" in low:
-                section = "vocab"
-            elif "vocabulary exercises" in low:
-                section = "vocab_ex"
-            elif "exit check" in low or "homework" in low:
-                section = "exit"
-            # печатаем заголовок как есть
-            doc.add_paragraph(L)
-            i += 1
+        # Если текущий абзац уже является переводной строкой в скобках — не добавляем ничего
+        if stripped.startswith("(") and stripped.endswith(")"):
             continue
 
-        # Внутри Word bank (vocab) – переразмечаем строку по флагам RU/TH
-        if section == "vocab" and " — " in L and re.match(r"^[A-Za-z]\.",
-                                                          L.strip()):
-            # ожидаем формат: a. <emoji?> EN — RU — TH
-            parts = re.split(r"\s—\s", L, maxsplit=2)
-            if len(parts) >= 2:
-                left = parts[0]  # литер + EN (и эмодзи)
-                ru_part = parts[1] if len(parts) >= 2 else None
-                th_part = parts[2] if len(parts) >= 3 else None
-                out_line = left
-                if args.with_ru and ru_part:
-                    out_line += " — " + ru_part
-                if args.with_th and th_part:
-                    out_line += " — " + th_part
-                doc.add_paragraph(out_line)
-                i += 1
-                continue
-
-        # если строка в скобках — это перевод и он должен идти только вместе с EN строкой — пропускаем здесь
-        if L.strip().startswith("(") and L.strip().endswith(")"):
-            i += 1
+        # Word bank: дописываем RU/TH в ту же строку
+        if section == "vocab" and re.match(r"^[A-Za-z]\.[\s]+", stripped):
+            # получить ключи поиска
+            left = stripped.split(" — ", 1)[0]
+            keys = [
+                norm_exact(left),
+                norm_exact(re.sub(r"^[A-Za-z]\.[\s]+", "", left)),
+                clean_vocab_en_term(left),
+                clean_vocab_en_term(re.sub(r"^[A-Za-z]\.[\s]+", "", left)),
+            ]
+            val = None
+            for k in keys:
+                if not k:
+                    continue
+                v = wb_map.get(k)
+                if v:
+                    val = v
+                    break
+            if val:
+                ru = val.get("ru")
+                th = val.get("th")
+                if args.with_ru and ru:
+                    rr_sep = new_p.add_run(" — ")
+                    rr_sep.font.italic = True
+                    rr_sep.font.color.rgb = DARK_RED
+                    rr_run = new_p.add_run(ru)
+                    rr_run.font.italic = True
+                    rr_run.font.color.rgb = DARK_RED
+                if args.with_th and th:
+                    th_sep = new_p.add_run(" — ")
+                    th_sep.font.italic = True
+                    th_sep.font.color.rgb = DARK_GREEN
+                    trun = new_p.add_run(th)
+                    trun.font.italic = True
+                    trun.font.color.rgb = DARK_GREEN
+                    trun.font.name = THAI_FONT_NAME
             continue
 
-        # Печатаем EN строку как есть
-        p_en = doc.add_paragraph(L)
+        # Контентные строки: добавляем RU/TH из словаря с зеркалированием подчёркиваний/ALL CAPS
+        key = norm_exact(text)
 
-        # Если далее есть RU/TH строки — добавим согласно флагам
-        ru_txt = th_txt = None
-        if i + 1 < total and lines[i + 1].strip().startswith("("):
-            ru_txt = lines[i + 1].strip()
-            if ru_txt.startswith("(") and ru_txt.endswith(")"):
-                ru_txt = ru_txt[1:-1]
-        if i + 2 < total and lines[i + 2].strip().startswith("("):
-            th_txt = lines[i + 2].strip()
-            if th_txt.startswith("(") and th_txt.endswith(")"):
-                th_txt = th_txt[1:-1]
+        # Проверяем, есть ли уже RU/TH в исходном документе сразу после текущей строки (до 2 следующих абзацев)
+        has_src_ru = False
+        has_src_th = False
+        for look_ahead in (0, 1):
+            j = (idx - 1) + 1 + look_ahead
+            if 0 <= j < len(src.paragraphs):
+                s = (src.paragraphs[j].text or "").strip()
+                if s.startswith("(") and s.endswith(")"):
+                    val = s[1:-1]
+                    if re.search(r"[\u0400-\u04FF]", val):
+                        has_src_ru = True
+                    if re.search(r"[\u0E00-\u0E7F]", val):
+                        has_src_th = True
 
-        if args.with_ru and ru_txt:
-            line_ru(doc, ru_txt)
-        if args.with_th and th_txt:
-            line_th(doc, th_txt)
+        if args.with_ru and not has_src_ru:
+            ru_txt = tr_map.get(key, {}).get("ru")
+            if ru_txt:
+                add_ru_mapped_line_with_highlights(out, p, ru_txt)
+        if args.with_th and not has_src_th:
+            th_txt = tr_map.get(key, {}).get("th")
+            if th_txt:
+                add_th_mapped_line_with_highlights(out, p, th_txt)
 
-        # если это упражнение и включены ответы — добавим
+        # Ответы — строго после переводов
         if args.with_answers and section in ("practice", "vocab_ex", "exit"):
-            key = norm_exact(L)
-            ans_lines = ans_map.get(key)
-            if ans_lines:
-                for a in ans_lines:
-                    ap = doc.add_paragraph()
-                    ar = ap.add_run(a)
+            a = ans_map.get(key)
+            if a:
+                for line in a:
+                    ap = out.add_paragraph()
+                    ar = ap.add_run(line)
                     ar.font.color.rgb = PURPLE
 
-        # Шагаем. Если RU/TH использованы — перескочим их
-        if ru_txt and th_txt:
-            i += 3
-        elif ru_txt or th_txt:
-            i += 2
-        else:
-            i += 1
-
-    doc.save(OUT_NAME)
+    out.save(OUT_NAME)
     print("[lesson3] Saved:", OUT_NAME)
 
 
